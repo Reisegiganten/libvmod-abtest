@@ -7,8 +7,7 @@
 
 #include "vcc_if.h"
 
-struct vmod_abtest;
-static void cfg_clear(struct vmod_abtest *c);
+#include "vmod_abtest.h"
 
 struct rule {
 	unsigned* probability;

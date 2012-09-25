@@ -1,3 +1,10 @@
-Module example
+Module abtest
 Init init_function
-Function STRING hello(STRING)
+
+Function VOID set_rule(PRIV_VCL, STRING, STRING)
+Function VOID clear(PRIV_VCL)
+
+Function VOID load_config(PRIV_VCL, STRING)
+Function VOID save_config(PRIV_VCL, STRING)
+
+Function STRING get_version(PRIV_VCL, STRING)

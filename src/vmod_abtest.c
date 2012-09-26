@@ -15,6 +15,9 @@
 	(cfg) = malloc(sizeof(struct vmod_abtest));		\
 	cfg_init((cfg));
 
+#define VMOD_ABTEST_MAGIC 0xDD2914D8
+#define RULE_REGEX "([[:alnum:]_]+):([[:digit:]]+);?"
+
 struct rule {
 	char* key;
 	unsigned num;
@@ -24,7 +27,6 @@ struct rule {
 	VTAILQ_ENTRY(rule) list;
 };
 
-#define VMOD_ABTEST_MAGIC 0xDD2914D8
 struct vmod_abtest {
 	unsigned magic;
 	unsigned xid;
@@ -61,14 +63,7 @@ void cfg_free(struct vmod_abtest *cfg) {
 	free(cfg);
 }
 
-void wrt_rule(FILE *f, struct rule *rule) {
-	AN(rule);
-	fprintf(f, "%s:", rule->key);
-}
-void rd_rule(FILE *f, struct rule *rule) {}
-
-/*
-static struct rule ab_get_rule(struct vmod_abtest *cfg, const char *key) {
+static struct rule* get_rule(struct vmod_abtest *cfg, const char *key) {
 	struct rule *r;
 
 	if (!key) {
@@ -82,38 +77,41 @@ static struct rule ab_get_rule(struct vmod_abtest *cfg, const char *key) {
 	}
 	return NULL;
 }
-*/
+
+static struct rule* get_rule_alloc(struct vmod_abtest *cfg, const char *key) {
+	unsigned l;
+	char *p;
+	struct rule *rule;
+
+	rule = get_rule(cfg, key);
+	if (!rule) {
+		// Allocate and add
+		rule = (struct rule*)calloc(sizeof(struct rule), 1);
+		AN(rule);
+
+		l = strlen(key) + 1;
+		rule->key = calloc(l, 1);
+		AN(rule->key);
+		memcpy(rule->key, key, l);
+
+		VTAILQ_INSERT_HEAD(&cfg->rules, rule, list);
+	}
+
+	return rule;
+}
+
 
 int init_function(struct vmod_priv *priv, const struct VCL_conf *conf) {
 	priv->free  = (vmod_priv_free_f *)cfg_free;
 	return (0);
 }
 
-#define RULE_REGEX "([[:alnum:]_]+):([[:digit:]]+);?"
 static void parse_rule(struct rule *rule, const char *source) {
 	unsigned n;
 	int r;
 	const char *s;
-	char *name;
 	regex_t regex;
 	regmatch_t match[3];
-
-/*
-	if (rule->names != NULL) {
-		for (num = 0; num < rule->num; num++) {
-			if (rule->names[num] != NULL) {
-				free(rule->names[num])
-				rule->name = NULL;
-			}
-		}
-		free(rule->names);
-		rule->names = NULL;
-	}
-	if (rule->probs != null) {
-		free rule->probs;
-		rule->probs = NULL;
-	}
-*/
 
 	if (regcomp(&regex, RULE_REGEX, REG_EXTENDED)){
 		fprintf(stderr, "Could not compile regex\n");
@@ -124,7 +122,6 @@ static void parse_rule(struct rule *rule, const char *source) {
 	s = source;
 	while ((r = regexec(&regex, s, 3, match, 0)) == 0) {
 		rule->num++;
-		fprintf(stderr, "parse: %s\n", s);
 		s += match[0].rm_eo;
 	}
 
@@ -135,7 +132,6 @@ static void parse_rule(struct rule *rule, const char *source) {
 		exit(1);
 	}
 
-	fprintf(stderr, "num: %d\n", rule->num);
 	rule->names = calloc(rule->num, sizeof(char*));
 	rule->probs = calloc(rule->num, sizeof(unsigned));
 
@@ -151,24 +147,22 @@ static void parse_rule(struct rule *rule, const char *source) {
 		n++;
 	}
 
-	fprintf(stderr, "Regex done\n");
-
 	regfree(&regex);
 }
 
 void vmod_set_rule(struct sess *sp, struct vmod_priv *priv, const char *key, const char *rule) {
-	fprintf(stderr, "set rule '%s': '%s'\n", key, rule);
+	AN(key);
 
 	if (priv->priv == NULL) {
 		ALLOC_CFG(priv->priv);
 	}
 
-	struct rule target;
-	parse_rule(&target, rule);
+	struct rule *target = get_rule_alloc(priv->priv, key);
+	parse_rule(target, rule);
 
-	fprintf(stderr, "found %d entries in rule.\n", target.num);
-	for (int i = 0; i < target.num; i++) {
-		fprintf(stderr, "%d: %s -> %d\n", i, target.names[i], target.probs[i]);
+	fprintf(stderr, "found %d entries in rule.\n", target->num);
+	for (int i = 0; i < target->num; i++) {
+		fprintf(stderr, "%d: %s -> %d\n", i, target->names[i], target->probs[i]);
 	}
 
 	exit(1);

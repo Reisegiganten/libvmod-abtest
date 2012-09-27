@@ -253,6 +253,7 @@ void vmod_load_config(struct sess *sp, struct vmod_priv *priv, const char *sourc
         s += match[0].rm_eo + 1;
     }
 
+    regfree(&regex);
     free (buf);
 
     if (r != REG_NOMATCH) {

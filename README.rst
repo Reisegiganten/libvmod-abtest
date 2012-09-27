@@ -1,5 +1,5 @@
 ============
-vmod_btest
+vmod_abtest
 ============
 
 ------------------------
@@ -23,29 +23,57 @@ DESCRIPTION
 FUNCTIONS
 =========
 
-abcookie
+set_rule
 -----
 
 Prototype
         ::
 
-                abcookie(STRING S)
+                set_rule(STRING key, STRING rule)
+
+clear
+-----
+
+Prototype
+        ::
+
+                clear()
+
+load_config
+-----
+
+Prototype
+        ::
+
+                load_config(STRING path)
+
+save_config
+-----
+
+Prototype
+        ::
+
+                save_config(STRING path)
+
+get_rand(STRING)
+-----
+
+Prototype
+        ::
+
+                get_rand(STRING key)
 Return value
-	STRING
+        STRING
 Description
-	Returns "Hello, " prepended to S
+        Returns one of the options in the specified rule.
 Example
         ::
 
-                set resp.http.hello = example.hello("World");
+                set resp.http.Set-Cookie = "abtesting=" + abtest.get_rand("base");
+
 
 INSTALLATION
 ============
-
-This is an example skeleton for developing out-of-tree Varnish
-vmods. It implements the "Hello, World!" as a vmod callback. Not
-particularly useful in good hello world tradition, but demonstrates how
-to get the glue around a vmod working.
 
 The source tree is based on autotools to configure the building, and
 does also have the necessary bits in place to do functional unit tests
@@ -70,24 +98,11 @@ Make targets:
 * make check - runs the unit tests in ``src/tests/*.vtc``
 
 In your VCL you could then use this vmod along the following lines::
-        
-        import example;
+
+        import abtest;
 
         sub vcl_deliver {
-                # This sets resp.http.hello to "Hello, World"
-                set resp.http.hello = example.hello("World");
+                set resp.http.Set-Cookie = "abtesting=" + abtest.get_rand("base");
         }
 
-HISTORY
-=======
-
-This manual page was released as part of the libvmod-example package,
-demonstrating how to create an out-of-tree Varnish vmod.
-
-COPYRIGHT
-=========
-
-This document is licensed under the same license as the
-libvmod-example project. See LICENSE for details.
-
-* Copyright (c) 2011 Varnish Software
+* Copyright (c) 2012 Destinationpunktse AB

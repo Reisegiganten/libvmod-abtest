@@ -133,7 +133,7 @@ static void parse_rule(struct rule *rule, const char *source) {
     regmatch_t match[3];
 
     if (regcomp(&regex, RULE_REGEX, REG_EXTENDED)){
-        fprintf(stderr, "Could not compile rule regex\n");
+        perror("Could not compile rule regex");
         exit(1);
     }
 
@@ -185,7 +185,7 @@ static void parse_rule(struct rule *rule, const char *source) {
 ** VMOD Functions
 *******************************************************************************/
 
-void vmod_set_rule(struct sess *sp, struct vmod_priv *priv, const char *key, const char *rule) {
+void __match_proto__() vmod_set_rule(struct sess *sp, struct vmod_priv *priv, const char *key, const char *rule) {
     AN(key);
 
     if (priv->priv == NULL) {
@@ -196,12 +196,12 @@ void vmod_set_rule(struct sess *sp, struct vmod_priv *priv, const char *key, con
     parse_rule(target, rule);
 }
 
-void vmod_clear(struct sess *sp, struct vmod_priv *priv) {
+void __match_proto__() vmod_clear(struct sess *sp, struct vmod_priv *priv) {
     if (priv->priv == NULL) { return; }
     cfg_clear(priv->priv);
 }
 
-void vmod_load_config(struct sess *sp, struct vmod_priv *priv, const char *source) {
+int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, const char *source) {
     AN(source);
 
     AZ(pthread_mutex_lock(&cfg_mtx));
@@ -224,12 +224,17 @@ void vmod_load_config(struct sess *sp, struct vmod_priv *priv, const char *sourc
     struct rule *rule;
 
     if (regcomp(&regex, CONF_REGEX, REG_EXTENDED)){
-        fprintf(stderr, "Could not compile line regex\n");
-        exit(1);
+        perror("Could not compile line regex");
+        AZ(pthread_mutex_unlock(&cfg_mtx));
+        return -1;
     }
 
     f = fopen(source, "r");
-    AN(f);
+    if (f == NULL) {
+        perror("ABTest: Could not open configuration file.");
+        AZ(pthread_mutex_unlock(&cfg_mtx));
+        return -1;
+    }
 
     fseek(f, 0L, SEEK_END);
     file_len = ftell(f);
@@ -263,13 +268,16 @@ void vmod_load_config(struct sess *sp, struct vmod_priv *priv, const char *sourc
         char buf[100];
         regerror(r, &regex, buf, sizeof(buf));
         fprintf(stderr, "Regex match failed: %s\n", buf);
-        exit(1);
+
+        AZ(pthread_mutex_unlock(&cfg_mtx));
+        return -1;
     }
 
     AZ(pthread_mutex_unlock(&cfg_mtx));
+    return 0;
 }
 
-void vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *target) {
+void __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *target) {
     AN(target);
 
     AZ(pthread_mutex_lock(&cfg_mtx));
@@ -301,7 +309,7 @@ void vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *targe
 * Weighted random algorithm from:
 * http://erlycoder.com/105/javascript-weighted-random-value-from-array
 */
-const char* vmod_get_rand(struct sess *sp, struct vmod_priv *priv, const char *key) {
+const char* __match_proto__() vmod_get_rand(struct sess *sp, struct vmod_priv *priv, const char *key) {
     struct rule *rule;
     double n;       // needle
     unsigned p;     // probe

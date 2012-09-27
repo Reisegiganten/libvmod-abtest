@@ -4,7 +4,7 @@ Init init_function
 Function VOID set_rule(PRIV_VCL, STRING, STRING)
 Function VOID clear(PRIV_VCL)
 
-Function VOID load_config(PRIV_VCL, STRING)
+Function INT load_config(PRIV_VCL, STRING)
 Function VOID save_config(PRIV_VCL, STRING)
 
 Function STRING get_rand(PRIV_VCL, STRING)

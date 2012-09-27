@@ -203,6 +203,9 @@ void vmod_clear(struct sess *sp, struct vmod_priv *priv) {
 
 void vmod_load_config(struct sess *sp, struct vmod_priv *priv, const char *source) {
     AN(source);
+
+    AZ(pthread_mutex_lock(&cfg_mtx));
+
     if (priv->priv == NULL) {
         ALLOC_CFG(priv->priv);
     } else {
@@ -262,12 +265,15 @@ void vmod_load_config(struct sess *sp, struct vmod_priv *priv, const char *sourc
         fprintf(stderr, "Regex match failed: %s\n", buf);
         exit(1);
     }
+
+    AZ(pthread_mutex_unlock(&cfg_mtx));
 }
 
 void vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *target) {
-    //TODO: Use mutex when writing file
-
     AN(target);
+
+    AZ(pthread_mutex_lock(&cfg_mtx));
+
     if (priv->priv == NULL) {
         return;
     }
@@ -288,6 +294,7 @@ void vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *targe
     }
 
     AZ(fclose(f));
+    AZ(pthread_mutex_unlock(&cfg_mtx));
 }
 
 /*

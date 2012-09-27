@@ -22,7 +22,7 @@ struct rule {
     char* key;
     unsigned num;
     unsigned* probs;
-    char** names;
+    char** options;
 
     VTAILQ_ENTRY(rule) list;
 };
@@ -49,7 +49,7 @@ static void cfg_clear(struct vmod_abtest *cfg) {
         VTAILQ_REMOVE(&cfg->rules, r, list);
         free(r->key);
         free(r->probs);
-        free(r->names);
+        free(r->options);
         free(r);
     }
 }
@@ -132,14 +132,14 @@ static void parse_rule(struct rule *rule, const char *source) {
         exit(1);
     }
 
-    rule->names = calloc(rule->num, sizeof(char*));
+    rule->options = calloc(rule->num, sizeof(char*));
     rule->probs = calloc(rule->num, sizeof(unsigned));
 
     s = source;
     n = 0;
     while ((r = regexec(&regex, s, 3, match, 0)) == 0 && n < rule->num) {
-        rule->names[n] = calloc(match[1].rm_eo - match[1].rm_so + 2, sizeof(char));
-        strlcpy(rule->names[n], s + match[1].rm_so, match[1].rm_eo - match[1].rm_so + 1);
+        rule->options[n] = calloc(match[1].rm_eo - match[1].rm_so + 2, sizeof(char));
+        strlcpy(rule->options[n], s + match[1].rm_so, match[1].rm_eo - match[1].rm_so + 1);
 
         rule->probs[n] = strtoul(s + match[2].rm_so, NULL, 10);
 
@@ -164,11 +164,6 @@ void vmod_set_rule(struct sess *sp, struct vmod_priv *priv, const char *key, con
 
     struct rule *target = get_rule_alloc(priv->priv, key);
     parse_rule(target, rule);
-
-    fprintf(stderr, "found %d entries in rule.\n", target->num);
-    for (int i = 0; i < target->num; i++) {
-        fprintf(stderr, "%d: %s -> %d\n", i, target->names[i], target->probs[i]);
-    }
 }
 
 void vmod_clear(struct sess *sp, struct vmod_priv *priv) {
@@ -211,7 +206,7 @@ void vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *targe
     VTAILQ_FOREACH(r, &cfg->rules, list) {
     	fprintf(f, "%s:", r->key);
         for (int i = 0; i < r->num; i++) {
-            fprintf(f, "%s:%d;", r->names[i], r->probs[i]);
+            fprintf(f, "%s:%d;", r->options[i], r->probs[i]);
         }
         fprintf(f, "\n");
     }
@@ -222,5 +217,10 @@ void vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *targe
 const char* vmod_get_version(struct sess *sp, struct vmod_priv *priv, const char *key) {
     if (priv->priv == NULL) {
         return NULL;
+    }
+
+    struct rule* rule = get_rule(struct vmod_abtest *cfg, const char *key)
+    if (rule == NULL) {
+    	return NULL;
     }
 }

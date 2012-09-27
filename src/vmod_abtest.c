@@ -12,12 +12,20 @@
 
 #include "vmod_abtest.h"
 
-#define ALLOC_CFG(cfg)                              \
-    (cfg) = malloc(sizeof(struct vmod_abtest));     \
+#define ALLOC_CFG(cfg)                                                          \
+    (cfg) = malloc(sizeof(struct vmod_abtest));                                 \
     cfg_init((cfg));
 
+#define DUP_MATCH(to, from, match)                                              \
+    (to) = (char*)calloc((match).rm_eo - (match).rm_so + 2, sizeof(char));      \
+    AN((to));                                                                   \
+    strlcpy((to), from + (match).rm_so, (match).rm_eo - (match).rm_so + 1);
+
+
+
 #define VMOD_ABTEST_MAGIC 0xDD2914D8
-#define RULE_REGEX "([[:alnum:]_]+):([[:digit:]]+);?"
+#define CONF_REGEX "([[:alnum:]_]+):(([[:alnum:]_]+:[[:digit:]]+;)*)"
+#define RULE_REGEX "([[:alnum:]_]+):([[:digit:]]+);"
 
 struct rule {
     char* key;
@@ -57,7 +65,7 @@ static void cfg_clear(struct vmod_abtest *cfg) {
     }
 }
 
-void cfg_free(struct vmod_abtest *cfg) {
+static void cfg_free(struct vmod_abtest *cfg) {
     CHECK_OBJ_NOTNULL(cfg, VMOD_ABTEST_MAGIC);
 
     cfg_clear(cfg);
@@ -81,23 +89,30 @@ static struct rule* get_rule(struct vmod_abtest *cfg, const char *key) {
     return NULL;
 }
 
-static struct rule* get_rule_alloc(struct vmod_abtest *cfg, const char *key) {
+static struct rule* alloc_rule(struct vmod_abtest *cfg, const char *key) {
     unsigned l;
     char *p;
     struct rule *rule;
 
+    rule = (struct rule*)calloc(sizeof(struct rule), 1);
+    AN(rule);
+
+    l = strlen(key) + 1;
+    rule->key = calloc(l, 1);
+    AN(rule->key);
+    memcpy(rule->key, key, l);
+
+    VTAILQ_INSERT_HEAD(&cfg->rules, rule, list);
+
+    return rule;
+}
+
+static struct rule* get_rule_alloc(struct vmod_abtest *cfg, const char *key) {
+    struct rule *rule;
+
     rule = get_rule(cfg, key);
     if (!rule) {
-        // Allocate and add
-        rule = (struct rule*)calloc(sizeof(struct rule), 1);
-        AN(rule);
-
-        l = strlen(key) + 1;
-        rule->key = calloc(l, 1);
-        AN(rule->key);
-        memcpy(rule->key, key, l);
-
-        VTAILQ_INSERT_HEAD(&cfg->rules, rule, list);
+        rule = alloc_rule(cfg, key);
     }
 
     return rule;
@@ -118,7 +133,7 @@ static void parse_rule(struct rule *rule, const char *source) {
     regmatch_t match[3];
 
     if (regcomp(&regex, RULE_REGEX, REG_EXTENDED)){
-        fprintf(stderr, "Could not compile regex\n");
+        fprintf(stderr, "Could not compile rule regex\n");
         exit(1);
     }
 
@@ -144,8 +159,7 @@ static void parse_rule(struct rule *rule, const char *source) {
     n = 0;
     sum = 0;
     while ((r = regexec(&regex, s, 3, match, 0)) == 0 && n < rule->num) {
-        rule->options[n] = calloc(match[1].rm_eo - match[1].rm_so + 2, sizeof(char));
-        strlcpy(rule->options[n], s + match[1].rm_so, match[1].rm_eo - match[1].rm_so + 1);
+        DUP_MATCH(rule->options[n], s, match[1]);
 
         rule->weights[n] = strtoul(s + match[2].rm_so, NULL, 10);
 
@@ -191,22 +205,67 @@ void vmod_load_config(struct sess *sp, struct vmod_priv *priv, const char *sourc
     AN(source);
     if (priv->priv == NULL) {
         ALLOC_CFG(priv->priv);
+    } else {
+        cfg_clear(priv->priv);
     }
 
+    struct vmod_abtest *cfg = priv->priv;
+
     FILE *f;
+    long file_len;
+    char *buf;
+    char *s;
+    int r;
+    regex_t regex;
+    regmatch_t match[3];
+    struct rule *rule;
+
+    if (regcomp(&regex, CONF_REGEX, REG_EXTENDED)){
+        fprintf(stderr, "Could not compile line regex\n");
+        exit(1);
+    }
+
     f = fopen(source, "r");
     AN(f);
 
-    char buf[100];
-    fgets(buf, sizeof buf, f);
-    fprintf(stderr, "Read config from %s: %s\n", source, buf);
+    fseek(f, 0L, SEEK_END);
+    file_len = ftell(f);
+    rewind(f);
 
-    //TODO: Read config
+    buf = calloc(file_len + 1, sizeof(char));
+    AN(buf);
+    fread(buf, file_len, 1, f);
 
     AZ(fclose(f));
+
+    s = buf;
+    while ((r = regexec(&regex, s, 3, match, 0)) == 0) {
+        *(s + match[0].rm_eo) = 0;
+
+        rule = (struct rule*)calloc(sizeof(struct rule), 1);
+        AN(rule);
+
+        VTAILQ_INSERT_HEAD(&cfg->rules, rule, list);
+
+        DUP_MATCH(rule->key, s, match[1]);
+        parse_rule(rule, s + match[2].rm_so);
+
+        s += match[0].rm_eo + 1;
+    }
+
+    free (buf);
+
+    if (r != REG_NOMATCH) {
+        char buf[100];
+        regerror(r, &regex, buf, sizeof(buf));
+        fprintf(stderr, "Regex match failed: %s\n", buf);
+        exit(1);
+    }
 }
 
 void vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *target) {
+    //TODO: Use mutex when writing file
+
     AN(target);
     if (priv->priv == NULL) {
         return;
@@ -231,10 +290,10 @@ void vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *targe
 }
 
 const char* vmod_get_rand(struct sess *sp, struct vmod_priv *priv, const char *key) {
-	struct rule *rule;
-	double n;		// needle
-	unsigned p;		// probe
-	unsigned l, h;	// low & high
+    struct rule *rule;
+    double n;       // needle
+    unsigned p;     // probe
+    unsigned l, h;  // low & high
 
     if (priv->priv == NULL) {
         return NULL;
@@ -250,20 +309,20 @@ const char* vmod_get_rand(struct sess *sp, struct vmod_priv *priv, const char *k
     h = rule->num - 1;
 
     while (l < h) {
-    	p = (unsigned)ceil((h + l) / 2);
-    	if (rule->norm_weights[p] < n) {
-    		l = p + 1;
-    	} else if (rule->norm_weights[p] > n) {
-    		h = p - 1;
-    	} else {
-    		return rule->options[p];
-    	}
+        p = (unsigned)ceil((h + l) / 2);
+        if (rule->norm_weights[p] < n) {
+            l = p + 1;
+        } else if (rule->norm_weights[p] > n) {
+            h = p - 1;
+        } else {
+            return rule->options[p];
+        }
     }
 
     if (l != h) {
-    	p = rule->norm_weights[l] >= n ? l : p;
+        p = rule->norm_weights[l] >= n ? l : p;
     } else {
-    	p = rule->norm_weights[l] >= n ? l : l+1;
+        p = rule->norm_weights[l] >= n ? l : l+1;
     }
     return rule->options[p];
 }

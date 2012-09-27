@@ -290,6 +290,10 @@ void vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *targe
     AZ(fclose(f));
 }
 
+/*
+* Weighted random algorithm from:
+* http://erlycoder.com/105/javascript-weighted-random-value-from-array
+*/
 const char* vmod_get_rand(struct sess *sp, struct vmod_priv *priv, const char *key) {
     struct rule *rule;
     double n;       // needle

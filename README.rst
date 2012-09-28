@@ -11,6 +11,12 @@ Varnish A/B Tests Module
 :Version: 0.1
 :Manual section: 3
 
+DESCRIPTION
+===========
+
+Varnish Module (vmod) to get weighted random values for A/B testing,
+with a dynamic configuration.
+
 SYNOPSIS
 ========
 
@@ -28,12 +34,6 @@ SYNOPSIS
         abtest.get_rand(<key>)
         abtest.get_rules()
 
-
-DESCRIPTION
-===========
-
-Varnish Module (vmod) to get weighted random values for A/B testing,
-with a dynamic configuration.
 
 FUNCTIONS
 =========
@@ -180,7 +180,7 @@ Example
 CONFIGURATION FILE
 ==================
 
-The configuration is save as an ASCII file with each rule on a separate line in
+The configuration is saved as an ASCII file with each rule on a separate line in
 the following format::
 
         <rule_name_1>:<option>:<weight>;<option>:<weight>;...
@@ -218,5 +218,34 @@ In your VCL you could then use this vmod along the following lines::
         sub vcl_deliver {
                 set resp.http.Set-Cookie = "abtesting=" + abtest.get_rand("base");
         }
+
+ACKNOWLEDGEMENTS
+================
+
+The general structure is inspired from the
+`example vmod <https://www.varnish-cache.org/vmod/example-vmod-hello-world>`_
+and many others.
+
+The weighted random function is originally from
+`Sergiy Dzysyak <http://erlycoder.com/105/javascript-weighted-random-value-from-array>`_
+
+HISTORY
+=======
+
+Version 0.1: Initial version.
+
+
+SEE ALSO
+========
+
+* varnishd(1)
+* vcl(7)
+* https://github.com/Destination/libvmod-abtest
+
+COPYRIGHT
+=========
+
+This document is licensed under the same license as the
+libvmod-abtest project. See LICENSE for details.
 
 * Copyright (c) 2012 Destinationpunktse AB

@@ -21,6 +21,14 @@
     AN((to));                                                                   \
     strlcpy((to), from + (match).rm_so, (match).rm_eo - (match).rm_so + 1);
 
+#define LOG_ERR(sess, ...)                                                      \
+    if ((sess) != NULL) {                                                       \
+        WSP((sess), SLT_VCL_error, __VA_ARGS__);                                \
+    } else {                                                                    \
+        fprintf(stderr, __VA_ARGS__);                                           \
+        fputs("\n", stderr);                                                    \
+    }
+
 
 
 #define VMOD_ABTEST_MAGIC 0xDD2914D8
@@ -124,7 +132,7 @@ int init_function(struct vmod_priv *priv, const struct VCL_conf *conf) {
     return (0);
 }
 
-static void parse_rule(struct rule *rule, const char *source) {
+static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
     unsigned n;
     unsigned sum;
     int r;
@@ -133,8 +141,12 @@ static void parse_rule(struct rule *rule, const char *source) {
     regmatch_t match[3];
 
     if (regcomp(&regex, RULE_REGEX, REG_EXTENDED)){
-        perror("Could not compile rule regex");
-        exit(1);
+        size_t err_len = regerror(r, &regex, NULL, 0);
+        char* err_buf = alloca(err_len);
+        regerror(r, &regex, err_buf, err_len);
+        LOG_ERR(sp, "Could not compile rule regex: %s", err_buf);
+
+        return;
     }
 
     rule->num = 0;
@@ -145,10 +157,12 @@ static void parse_rule(struct rule *rule, const char *source) {
     }
 
     if (r != REG_NOMATCH) {
-        char buf[100];
-        regerror(r, &regex, buf, sizeof(buf));
-        fprintf(stderr, "Regex match failed: %s\n", buf);
-        exit(1);
+        size_t err_len = regerror(r, &regex, NULL, 0);
+        char* err_buf = alloca(err_len);
+        regerror(r, &regex, err_buf, err_len);
+        LOG_ERR(sp, "Regex match failed: %s", err_buf);
+
+        return;
     }
 
     rule->options = calloc(rule->num, sizeof(char*));
@@ -193,7 +207,7 @@ void __match_proto__() vmod_set_rule(struct sess *sp, struct vmod_priv *priv, co
     }
 
     struct rule *target = get_rule_alloc(priv->priv, key);
-    parse_rule(target, rule);
+    parse_rule(sp, target, rule);
 }
 
 void __match_proto__() vmod_rem_rule(struct sess *sp, struct vmod_priv *priv, const char *key) {
@@ -237,15 +251,20 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
     struct rule *rule;
 
     if (r = regcomp(&regex, CONF_REGEX, REG_EXTENDED)){
-        perror("Could not compile line regex");
         AZ(pthread_mutex_unlock(&cfg_mtx));
+
+        size_t err_len = regerror(r, &regex, NULL, 0);
+        char* err_buf = alloca(err_len);
+        regerror(r, &regex, err_buf, err_len);
+        LOG_ERR(sp, "Could not compile line regex: %s", err_buf);
+
         return r;
     }
 
     f = fopen(source, "r");
     if (f == NULL) {
-        perror("ABTest: Could not open configuration file.");
         AZ(pthread_mutex_unlock(&cfg_mtx));
+        LOG_ERR(sp, "Could not open abtest configuration file '%s' for reading.", source);
         return errno;
     }
 
@@ -269,7 +288,7 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
         VTAILQ_INSERT_HEAD(&cfg->rules, rule, list);
 
         DUP_MATCH(rule->key, s, match[1]);
-        parse_rule(rule, s + match[2].rm_so);
+        parse_rule(sp, rule, s + match[2].rm_so);
 
         s += match[0].rm_eo + 1;
     }
@@ -278,11 +297,13 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
     free (buf);
 
     if (r != REG_NOMATCH) {
-        char buf[100];
-        regerror(r, &regex, buf, sizeof(buf));
-        fprintf(stderr, "Regex match failed: %s\n", buf);
-
         AZ(pthread_mutex_unlock(&cfg_mtx));
+
+        size_t err_len = regerror(r, &regex, NULL, 0);
+        char* err_buf = alloca(err_len);
+        regerror(r, &regex, err_buf, err_len);
+        LOG_ERR(sp, "Regex match failed: %s", err_buf);
+
         return r;
     }
 
@@ -290,13 +311,13 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
     return 0;
 }
 
-void __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *target) {
+int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *target) {
     AN(target);
 
     AZ(pthread_mutex_lock(&cfg_mtx));
 
     if (priv->priv == NULL) {
-        return;
+        return 0;
     }
 
     struct vmod_abtest* cfg = priv->priv;
@@ -304,7 +325,11 @@ void __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv,
     FILE *f;
 
     f = fopen(target, "w");
-    AN(f);
+    if (f == NULL) {
+        LOG_ERR(sp, "Could not open abtest configuration file '%s' for writing.", target);
+        AZ(pthread_mutex_unlock(&cfg_mtx));
+        return errno;
+    }
 
     VTAILQ_FOREACH(r, &cfg->rules, list) {
         fprintf(f, "%s:", r->key);
@@ -316,6 +341,8 @@ void __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv,
 
     AZ(fclose(f));
     AZ(pthread_mutex_unlock(&cfg_mtx));
+
+    return 0;
 }
 
 /*

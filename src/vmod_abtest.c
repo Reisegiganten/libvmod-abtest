@@ -201,6 +201,7 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
 
 void __match_proto__() vmod_set_rule(struct sess *sp, struct vmod_priv *priv, const char *key, const char *rule) {
     AN(key);
+    AN(rule);
 
     if (priv->priv == NULL) {
         ALLOC_CFG(priv->priv);
@@ -224,7 +225,10 @@ void __match_proto__() vmod_rem_rule(struct sess *sp, struct vmod_priv *priv, co
 }
 
 void __match_proto__() vmod_clear(struct sess *sp, struct vmod_priv *priv) {
-    if (priv->priv == NULL) { return; }
+    if (priv->priv == NULL) {
+        return;
+    }
+
     cfg_clear(priv->priv);
 }
 
@@ -238,8 +242,6 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
     } else {
         cfg_clear(priv->priv);
     }
-
-    struct vmod_abtest *cfg = priv->priv;
 
     FILE *f;
     long file_len;
@@ -285,7 +287,7 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
         rule = (struct rule*)calloc(sizeof(struct rule), 1);
         AN(rule);
 
-        VTAILQ_INSERT_HEAD(&cfg->rules, rule, list);
+        VTAILQ_INSERT_HEAD(&((struct vmod_abtest*) priv->priv)->rules, rule, list);
 
         DUP_MATCH(rule->key, s, match[1]);
         parse_rule(sp, rule, s + match[2].rm_so);
@@ -320,7 +322,6 @@ int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, 
         return 0;
     }
 
-    struct vmod_abtest* cfg = priv->priv;
     struct rule *r;
     FILE *f;
 
@@ -331,7 +332,7 @@ int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, 
         return errno;
     }
 
-    VTAILQ_FOREACH(r, &cfg->rules, list) {
+    VTAILQ_FOREACH(r, &((struct vmod_abtest*) priv->priv)->rules, list) {
         fprintf(f, "%s:", r->key);
         for (int i = 0; i < r->num; i++) {
             fprintf(f, "%s:%d;", r->options[i], r->weights[i]);
@@ -350,6 +351,8 @@ int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, 
 * http://erlycoder.com/105/javascript-weighted-random-value-from-array
 */
 const char* __match_proto__() vmod_get_rand(struct sess *sp, struct vmod_priv *priv, const char *key) {
+    AN(key);
+
     struct rule *rule;
     double n;       // needle
     unsigned p;     // probe

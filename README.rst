@@ -129,8 +129,8 @@ Description
         On successful completion, the save_config() function returns 0.
         Otherwise, it returns an integer value indicating the error that occured.
 
-        ..      note:: If the current configuration is uninitialized, the function returns
-                immediatly and does **not** overwrite the configuration file.
+        If the current configuration is uninitialized, the function returns
+        immediatly and does **not** overwrite the configuration file.
 
         See `configuration file`_ for information on the file format.
 Example

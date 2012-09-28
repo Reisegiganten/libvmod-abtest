@@ -1,42 +1,3 @@
-/*-
- * Copyright (c) 2006 Verdens Gang AS
- * Copyright (c) 2006-2011 Varnish Software AS
- * All rights reserved.
- *
- * Author: Poul-Henning Kamp <phk@phk.freebsd.dk>
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL AUTHOR OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
- * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * The default VCL code.
- *
- * NB! You do NOT need to copy & paste all of these functions into your
- * own vcl code, if you do not provide a definition of one of these
- * functions, the compiler will automatically fall back to the default
- * code from this file.
- *
- * This code will be prefixed with a backend declaration built from the
- * -b argument.
- */
-
  import std;
  import abtest;
 
@@ -59,6 +20,9 @@ sub vcl_init {
     if (abtest.load_config("/tmp/abtest.cfg") != 0) {
         C{ syslog(LOG_ALERT, "Unable to load AB config from /tmp/abtest.cfg"); }C
     }
+    abtest.set_rule("special", "a:10;b:90;");
+    abtest.rem_rule("base");
+
     return (ok);
 }
 
@@ -66,24 +30,32 @@ sub vcl_fini {
 }
 
 sub vcl_recv {
-    if (req.http.AB-Cfg) {
+    std.log(abtest.get_rules());
+
+    if (req.http.X-AB-Cfg) {
         if (!client.ip ~ abconfig) {
             std.log("AB Config request not allowed from " + client.ip);
             error 405 "Not allowed.";
         } else {
-            // curl localhost:8080 -X PUT -H "AB-Cfg:base" -H "AB-Cfg-Val:a:25;b:75;"
+            // curl localhost:8080 -X PUT -H "X-AB-Cfg:base" -H "X-AB-Cfg-Val:a:25;b:75;"
             if (req.request == "PUT") {
-                std.log("AB Config PUT request: " + req.http.AB-Cfg + "|" + req.http.AB-Cfg-Val);
-                abtest.set_rule(req.http.AB-Cfg, req.http.AB-Cfg-Val);
-                abtest.save_config("/tmp/abtest.cfg");
+                std.log("AB Config PUT request: " + req.http.X-AB-Cfg + "|" + req.http.X-AB-Cfg-Val);
+                abtest.set_rule(req.http.X-AB-Cfg, req.http.X-AB-Cfg-Val);
+                if (abtest.save_config("/tmp/abtest.cfg") != 0) {
+                    std.log("ABTest - Error, could not save the configuration");
+                }
             }
 
+            // curl localhost:8080 -X DELETE -H "X-AB-Cfg:base"
             if (req.request == "DELETE") {
-                std.log("AB Config DELETE request: " + req.http.AB-Cfg);
+                std.log("AB Config DELETE request: " + req.http.X-AB-Cfg);
+                abtest.rem_rule(req.http.X-AB-Cfg);
             }
 
+            // curl localhost:8080 -X DELETE -H "X-AB-Cfg;"
             if (req.request == "GET") {
-                std.log("AB Config GET request: " + req.http.AB-Cfg);
+                std.log("AB Config GET request: " + req.http.X-AB-Cfg);
+                std.log("CFG -> " + abtest.get_rules());
             }
         }
     }

@@ -8,28 +8,71 @@ Varnish A/B Tests Module
 
 :Author: Xavier Basty
 :Date: 2012-09-24
-:Version: 1.0
+:Version: 0.1
 :Manual section: 3
 
 SYNOPSIS
 ========
 
-import abtest;
+::
+
+        import abtest;
+
+        abtest.set_rule(<key>, <rule>)
+        abtest.rem_rule(<key>)
+        abtest.clear()
+
+        abtest.load_config(<path>)
+        abtest.save_config(<path>)
+
+        abtest.get_rand(<key>)
+        abtest.get_rules()
+
 
 DESCRIPTION
 ===========
 
+Varnish Module (vmod) to get weighted random values for A/B testing,
+with a dynamic configuration.
 
 FUNCTIONS
 =========
 
 set_rule
------
+--------
 
 Prototype
         ::
 
                 set_rule(STRING key, STRING rule)
+Return value
+        VOID
+Description
+        Set the rule associated with the specified key.
+
+        The format for the rule declaration is:
+
+        ``<option1>:<weight1>;<option2>:<weight2>;``
+
+        The weights are relative to each others, so sum of all the weight is
+        considered equals to 100%.
+
+Example
+        ``abtest.set_rule("base_rule", "a:60;b:40");``
+
+rem_rule
+--------
+
+Prototype
+        ::
+
+                rem_rule(STRING)
+Return value
+        VOID
+Description
+        Remove the rule associated with the specified key.
+Example
+        ``abtest.rem_rule("base_rule");``
 
 clear
 -----
@@ -38,25 +81,49 @@ Prototype
         ::
 
                 clear()
+Return value
+        VOID
+Description
+        Remove all the rules from the current configuration.
+Example
+        ``abtest.clear();``
 
 load_config
------
+-----------
 
 Prototype
         ::
 
                 load_config(STRING path)
+Return value
+        INT
+Description
+        On successful completion, the load_config() function returns 0.
+        Otherwise, it returns an integer value indicating the error that occured
+        and the content of the current configuration is undefined.
+
+        See `CONFIGURATION FILE`_ for reference on the file format.
 
 save_config
------
+-----------
 
 Prototype
         ::
 
                 save_config(STRING path)
+Return value
+        INT
+Description
+        On successful completion, the save_config() function returns 0.
+        Otherwise, it returns an integer value indicating the error that occured.
 
-get_rand(STRING)
------
+        ..      note:: If the current configuration is uninitialized, the function returns
+                immediatly and does **not** overwrite the configuration file.
+
+        See `CONFIGURATION FILE`_ for reference on the file format.
+
+get_rand
+--------
 
 Prototype
         ::
@@ -65,12 +132,30 @@ Prototype
 Return value
         STRING
 Description
-        Returns one of the options in the specified rule.
+        Returns one of the options in the specified rule,
+        the option is chosen with the random weights declared in the rule.
 Example
+        ``set resp.http.Set-Cookie = "abtesting=" + abtest.get_rand("base");``
+
+get_rules
+---------
+
+Prototype
         ::
 
-                set resp.http.Set-Cookie = "abtesting=" + abtest.get_rand("base");
+                get_rules()
+Return value
+        STRING
 
+
+CONFIGURATION FILE
+==================
+
+The configuration is save as an ASCII file with each rule on a separate line in
+the following format::
+
+        <rule_name_1>:<option>:<weight>;<option>:<weight>;...
+        <rule_name_2>:<option>:<weight>;<option>:<weight>;...
 
 INSTALLATION
 ============

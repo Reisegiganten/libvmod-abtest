@@ -108,7 +108,13 @@ Description
         If an active configuration is already present, it is overwritten when
         the file is loaded successfully.
 
-        See `CONFIGURATION FILE`_ for reference on the file format.
+        See `configuration file`_ for information on the file format.
+Example
+        ::
+
+                if (abtest.load_config("abtest.cfg") != 0) {
+                        std.log("Could not load the configuration file!");
+                }
 
 save_config
 -----------
@@ -126,7 +132,13 @@ Description
         ..      note:: If the current configuration is uninitialized, the function returns
                 immediatly and does **not** overwrite the configuration file.
 
-        See `CONFIGURATION FILE`_ for reference on the file format.
+        See `configuration file`_ for information on the file format.
+Example
+        ::
+
+                if (abtest.save_config("abtest.cfg") != 0) {
+                        std.log("Could not save the configuration file!");
+                }
 
 get_rand
 --------
@@ -140,6 +152,9 @@ Return value
 Description
         Returns one of the options in the specified rule,
         the option is chosen with the random weights declared in the rule.
+
+        If the rule is not present in the current configuration, the function
+        returns NULL.
 Example
         ``set resp.http.Set-Cookie = "abtesting=" + abtest.get_rand("base");``
 
@@ -152,6 +167,14 @@ Prototype
                 get_rules()
 Return value
         STRING
+Description
+        Returns a list of all the rules present in the current configuration.
+
+        The format of the rule returned is the same as in the
+        `configuration file`_, but with the rule separated with spaces instead
+        of new lines.
+Example
+        ``set resp.http.X-AB-Rules = abtest.get_rules();``
 
 
 CONFIGURATION FILE

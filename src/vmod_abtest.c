@@ -221,6 +221,7 @@ void __match_proto__() vmod_rem_rule(struct sess *sp, struct vmod_priv *priv, co
     struct rule *rule = get_rule(priv->priv, key);
     if (rule != NULL) {
         VTAILQ_REMOVE(&((struct vmod_abtest*)priv->priv)->rules, rule, list);
+        delete_rule(rule);
     }
 }
 

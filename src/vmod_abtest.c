@@ -236,17 +236,17 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
     regmatch_t match[3];
     struct rule *rule;
 
-    if (regcomp(&regex, CONF_REGEX, REG_EXTENDED)){
+    if (r = regcomp(&regex, CONF_REGEX, REG_EXTENDED)){
         perror("Could not compile line regex");
         AZ(pthread_mutex_unlock(&cfg_mtx));
-        return -1;
+        return r;
     }
 
     f = fopen(source, "r");
     if (f == NULL) {
         perror("ABTest: Could not open configuration file.");
         AZ(pthread_mutex_unlock(&cfg_mtx));
-        return -1;
+        return errno;
     }
 
     fseek(f, 0L, SEEK_END);
@@ -283,7 +283,7 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
         fprintf(stderr, "Regex match failed: %s\n", buf);
 
         AZ(pthread_mutex_unlock(&cfg_mtx));
-        return -1;
+        return r;
     }
 
     AZ(pthread_mutex_unlock(&cfg_mtx));

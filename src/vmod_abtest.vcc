@@ -9,3 +9,4 @@ Function INT load_config(PRIV_VCL, STRING)
 Function VOID save_config(PRIV_VCL, STRING)
 
 Function STRING get_rand(PRIV_VCL, STRING)
+Function STRING get_rules(PRIV_VCL)

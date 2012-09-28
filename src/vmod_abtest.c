@@ -359,3 +359,45 @@ const char* __match_proto__() vmod_get_rand(struct sess *sp, struct vmod_priv *p
     }
     return rule->options[p];
 }
+
+const char* __match_proto__() vmod_get_rules(struct sess *sp, struct vmod_priv *priv) {
+    if (priv->priv == NULL) {
+        return NULL;
+    }
+
+    struct rule *r;
+    size_t len = 0;
+    size_t l;
+    int i;
+    char *rules;
+    char *s;
+
+    VTAILQ_FOREACH(r, &((struct vmod_abtest*)priv->priv)->rules, list) {
+        len += strlen(r->key) + 2;
+        for (i = 0; i < r->num; i++) {
+            len += snprintf(NULL, 0, "%s:%d;", r->options[i], r->weights[i]);
+        }
+    }
+
+    AN(rules = (char*)WS_Alloc(sp->ws, len + 1));
+
+    s = rules;
+    VTAILQ_FOREACH(r, &((struct vmod_abtest*)priv->priv)->rules, list) {
+        l = strlen(r->key);
+        memcpy(s, r->key, l);
+        s += l;
+        *s++ = ':';
+        len -= l + 1;
+
+        for (i = 0; i < r->num; i++) {
+            l = snprintf(s, len, "%s:%d;", r->options[i], r->weights[i]);
+            s += l;
+            len -= l;
+        }
+        *s++ = ' ';
+        len--;
+    }
+    *s = 0;
+
+    return rules;
+}

@@ -196,6 +196,19 @@ void __match_proto__() vmod_set_rule(struct sess *sp, struct vmod_priv *priv, co
     parse_rule(target, rule);
 }
 
+void __match_proto__() vmod_rem_rule(struct sess *sp, struct vmod_priv *priv, const char *key) {
+    AN(key);
+
+    if (priv->priv == NULL) {
+        return;
+    }
+
+    struct rule *rule = get_rule(priv->priv, key);
+    if (rule != NULL) {
+        VTAILQ_REMOVE(&((struct vmod_abtest*)priv->priv)->rules, rule, list);
+    }
+}
+
 void __match_proto__() vmod_clear(struct sess *sp, struct vmod_priv *priv) {
     if (priv->priv == NULL) { return; }
     cfg_clear(priv->priv);

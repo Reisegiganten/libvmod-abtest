@@ -2,6 +2,7 @@ Module abtest
 Init init_function
 
 Function VOID set_rule(PRIV_VCL, STRING, STRING)
+Function VOID rem_rule(PRIV_VCL, STRING)
 Function VOID clear(PRIV_VCL)
 
 Function INT load_config(PRIV_VCL, STRING)

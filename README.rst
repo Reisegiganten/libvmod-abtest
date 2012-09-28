@@ -71,6 +71,9 @@ Return value
         VOID
 Description
         Remove the rule associated with the specified key.
+
+        If the rule doesn't exist in the configuration, the function does
+        nothing and returns without errors.
 Example
         ``abtest.rem_rule("base_rule");``
 
@@ -100,7 +103,10 @@ Return value
 Description
         On successful completion, the load_config() function returns 0.
         Otherwise, it returns an integer value indicating the error that occured
-        and the content of the current configuration is undefined.
+        and the content of the current configuration remains unchanged.
+
+        If an active configuration is already present, it is overwritten when
+        the file is loaded successfully.
 
         See `CONFIGURATION FILE`_ for reference on the file format.
 

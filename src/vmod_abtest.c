@@ -13,13 +13,19 @@
 #include "vmod_abtest.h"
 
 #define ALLOC_CFG(cfg)                                                          \
-    (cfg) = malloc(sizeof(struct vmod_abtest));                                 \
+    (cfg) = calloc(1, sizeof(struct vmod_abtest));                              \
     cfg_init((cfg));
 
 #define DUP_MATCH(to, from, match)                                              \
     (to) = (char*)calloc((match).rm_eo - (match).rm_so + 2, sizeof(char));      \
     AN((to));                                                                   \
     strlcpy((to), from + (match).rm_so, (match).rm_eo - (match).rm_so + 1);
+
+#define FREE_FIELD(field)                                                       \
+    if ((field) != NULL) {                                                      \
+        free ((field));                                                         \
+        (field) = NULL;                                                         \
+    }
 
 #define LOG_ERR(sess, ...)                                                      \
     if ((sess) != NULL) {                                                       \
@@ -65,11 +71,7 @@ static void cfg_clear(struct vmod_abtest *cfg) {
     struct rule *r, *r2;
     VTAILQ_FOREACH_SAFE(r, &cfg->rules, list, r2) {
         VTAILQ_REMOVE(&cfg->rules, r, list);
-        free(r->key);
-        free(r->weights);
-        free(r->norm_weights);
-        free(r->options);
-        free(r);
+        delete_rule(r);
     }
 }
 
@@ -80,6 +82,14 @@ static void cfg_free(struct vmod_abtest *cfg) {
     cfg->xid = 0;
     cfg->magic = 0;
     free(cfg);
+}
+
+static void delete_rule(struct rule* r) {
+        FREE_FIELD(r->key);
+        FREE_FIELD(r->weights);
+        FREE_FIELD(r->norm_weights);
+        FREE_FIELD(r->options);
+        free(r);
 }
 
 static struct rule* get_rule(struct vmod_abtest *cfg, const char *key) {
@@ -124,12 +134,6 @@ static struct rule* get_rule_alloc(struct vmod_abtest *cfg, const char *key) {
     }
 
     return rule;
-}
-
-
-int init_function(struct vmod_priv *priv, const struct VCL_conf *conf) {
-    priv->free  = (vmod_priv_free_f *)cfg_free;
-    return (0);
 }
 
 static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
@@ -199,6 +203,11 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
 ** VMOD Functions
 *******************************************************************************/
 
+int init_function(struct vmod_priv *priv, const struct VCL_conf *conf) {
+    priv->free  = (vmod_priv_free_f *)cfg_free;
+    return (0);
+}
+
 void __match_proto__() vmod_set_rule(struct sess *sp, struct vmod_priv *priv, const char *key, const char *rule) {
     AN(key);
     AN(rule);
@@ -238,12 +247,6 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
 
     AZ(pthread_mutex_lock(&cfg_mtx));
 
-    if (priv->priv == NULL) {
-        ALLOC_CFG(priv->priv);
-    } else {
-        cfg_clear(priv->priv);
-    }
-
     FILE *f;
     long file_len;
     char *buf;
@@ -252,9 +255,20 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
     regex_t regex;
     regmatch_t match[3];
     struct rule *rule;
+    struct vmod_abtest* cfg;
+
+    ALLOC_CFG(cfg);
+
+    if (priv->priv == NULL) {
+        ALLOC_CFG(priv->priv);
+    } else {
+        cfg_clear(priv->priv);
+    }
+
 
     if (r = regcomp(&regex, CONF_REGEX, REG_EXTENDED)){
         AZ(pthread_mutex_unlock(&cfg_mtx));
+        cfg_free(cfg);
 
         size_t err_len = regerror(r, &regex, NULL, 0);
         char* err_buf = alloca(err_len);
@@ -267,6 +281,8 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
     f = fopen(source, "r");
     if (f == NULL) {
         AZ(pthread_mutex_unlock(&cfg_mtx));
+        cfg_free(cfg);
+
         LOG_ERR(sp, "Could not open abtest configuration file '%s' for reading.", source);
         return errno;
     }
@@ -301,6 +317,7 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
 
     if (r != REG_NOMATCH) {
         AZ(pthread_mutex_unlock(&cfg_mtx));
+        cfg_free(cfg);
 
         size_t err_len = regerror(r, &regex, NULL, 0);
         char* err_buf = alloca(err_len);
@@ -311,6 +328,12 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
     }
 
     AZ(pthread_mutex_unlock(&cfg_mtx));
+
+    if (priv->priv != NULL) {
+        cfg_free(priv->priv);
+    }
+    priv->priv = cfg;
+
     return 0;
 }
 

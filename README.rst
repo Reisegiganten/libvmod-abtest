@@ -33,6 +33,7 @@ SYNOPSIS
 
         abtest.get_rand(<key>)
         abtest.get_rules()
+        abtest.get_duration(<key>)
 
 
 FUNCTIONS
@@ -52,13 +53,18 @@ Description
 
         The format for the rule declaration is:
 
-        ``<option1>:<weight1>;<option2>:<weight2>;``
+        ``<option1>:<weight1>;<option2>:<weight2>;...;[duration];``
 
         The weights are relative to each others, so sum of all the weight is
         considered equals to 100%.
 
+        The duration is optional, if it is not present, it is set to 0.
+
 Example
-        ``abtest.set_rule("base_rule", "a:60;b:40");``
+        ::
+
+                abtest.set_rule("base_rule", "a:60;b:40");
+                abtest.set_rule("extra_rule", "a:80;b:20;300;");
 
 rem_rule
 --------
@@ -176,6 +182,20 @@ Description
 Example
         ``set resp.http.X-AB-Rules = abtest.get_rules();``
 
+get_duration
+------------
+
+Prototype
+        ::
+                get_duration(<key>)
+Return value
+        INT
+Description
+        Return the configured cookie duration for the specified rule.
+
+        If the duration is not set in the rule, or if the rule does not exist
+        in the configuration, the function returns 0;
+
 
 CONFIGURATION FILE
 ==================
@@ -183,8 +203,12 @@ CONFIGURATION FILE
 The configuration is saved as an ASCII file with each rule on a separate line in
 the following format::
 
-        <rule_name_1>:<option>:<weight>;<option>:<weight>;...
-        <rule_name_2>:<option>:<weight>;<option>:<weight>;...
+        <rule_name_1>:<option>:<weight>;<option>:<weight>;...;[duration];
+        <rule_name_2>:<option>:<weight>;<option>:<weight>;...;[duration];
+
+At least one pair option/weight must be declared for a rule to be valid.
+
+The duration is optional, if it is not set, its value is set to 0.
 
 INSTALLATION
 ============

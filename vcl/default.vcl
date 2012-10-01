@@ -52,10 +52,13 @@ sub vcl_recv {
                 abtest.rem_rule(req.http.X-AB-Cfg);
             }
 
-            // curl localhost:8080 -X DELETE -H "X-AB-Cfg;"
+            // curl localhost:8080 -X GET -H "X-AB-Cfg;"
             if (req.request == "GET") {
                 std.log("AB Config GET request: " + req.http.X-AB-Cfg);
                 std.log("CFG -> " + abtest.get_rules());
+                if (req.http.X-AB-Cfg != "") {
+                    std.log("duration for '" + req.http.X-AB-Cfg + "': " + abtest.get_duration(req.http.X-AB-Cfg));
+                }
             }
         }
     }

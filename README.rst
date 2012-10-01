@@ -64,7 +64,7 @@ Example
         ::
 
                 abtest.set_rule("base_rule", "a:60;b:40");
-                abtest.set_rule("extra_rule", "a:80;b:20;300;");
+                abtest.set_rule("^/repec/cgi-bin/authorref.cgi\?handle=", "a:80;b:20;300;");
 
 rem_rule
 --------

@@ -35,10 +35,8 @@
         fputs("\n", stderr);                                                    \
     }
 
-
-
 #define VMOD_ABTEST_MAGIC 0xDD2914D8
-#define CONF_REGEX "([[:alnum:]_]+):(([[:alnum:]_]+:[[:digit:]]+;)+(([[:digit:]]*);)?)"
+#define CONF_REGEX "([^:\r\n]+):(([[:alnum:]_]+:[[:digit:]]+;)+(([[:digit:]]*);)?)"
 #define RULE_REGEX "([[:alnum:]_]+):([[:digit:]]+);"
 #define TIME_REGEX ";([[:digit:]]+);"
 

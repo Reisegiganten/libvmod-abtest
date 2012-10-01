@@ -38,12 +38,14 @@
 
 
 #define VMOD_ABTEST_MAGIC 0xDD2914D8
-#define CONF_REGEX "([[:alnum:]_]+):(([[:alnum:]_]+:[[:digit:]]+;)*)"
+#define CONF_REGEX "([[:alnum:]_]+):(([[:alnum:]_]+:[[:digit:]]+;)+(([[:digit:]]*);)?)"
 #define RULE_REGEX "([[:alnum:]_]+):([[:digit:]]+);"
+#define TIME_REGEX ";([[:digit:]]+);"
 
 struct rule {
     char* key;
     unsigned num;
+    unsigned duration;
     unsigned* weights;
     double* norm_weights;
     char** options;
@@ -141,30 +143,50 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
     unsigned sum;
     int r;
     const char *s;
-    regex_t regex;
+    regex_t rule_regex;
+    regex_t time_regex;
     regmatch_t match[3];
 
-    if (regcomp(&regex, RULE_REGEX, REG_EXTENDED)){
-        size_t err_len = regerror(r, &regex, NULL, 0);
+    if (regcomp(&rule_regex, RULE_REGEX, REG_EXTENDED)){
+        size_t err_len = regerror(r, &rule_regex, NULL, 0);
         char* err_buf = alloca(err_len);
-        regerror(r, &regex, err_buf, err_len);
+        regerror(r, &rule_regex, err_buf, err_len);
         LOG_ERR(sp, "Could not compile rule regex: %s", err_buf);
 
         return;
     }
 
+    if (regcomp(&time_regex, RULE_REGEX, REG_EXTENDED)){
+        regfree(&rule_regex);
+        size_t err_len = regerror(r, &time_regex, NULL, 0);
+        char* err_buf = alloca(err_len);
+        regerror(r, &time_regex, err_buf, err_len);
+        LOG_ERR(sp, "Could not compile time regex: %s", err_buf);
+
+        return;
+    }
+
+    s = source;
+    if (r = regexec(&time_regex, s, 1, match, 0) == 0) {
+        rule->duration = strtoul(s + match[0].rm_so, NULL, 10);
+    } else {
+        rule->duration = 0;
+    }
+
     rule->num = 0;
     s = source;
-    while ((r = regexec(&regex, s, 3, match, 0)) == 0) {
+    while ((r = regexec(&rule_regex, s, 3, match, 0)) == 0) {
         rule->num++;
         s += match[0].rm_eo;
     }
 
     if (r != REG_NOMATCH) {
-        size_t err_len = regerror(r, &regex, NULL, 0);
+        regfree(&rule_regex);
+        regfree(&time_regex);
+        size_t err_len = regerror(r, &rule_regex, NULL, 0);
         char* err_buf = alloca(err_len);
-        regerror(r, &regex, err_buf, err_len);
-        LOG_ERR(sp, "Regex match failed: %s", err_buf);
+        regerror(r, &rule_regex, err_buf, err_len);
+        LOG_ERR(sp, "Rule regex match failed: %s", err_buf);
 
         return;
     }
@@ -176,7 +198,7 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
     s = source;
     n = 0;
     sum = 0;
-    while ((r = regexec(&regex, s, 3, match, 0)) == 0 && n < rule->num) {
+    while ((r = regexec(&rule_regex, s, 3, match, 0)) == 0 && n < rule->num) {
         DUP_MATCH(rule->options[n], s, match[1]);
 
         rule->weights[n] = strtoul(s + match[2].rm_so, NULL, 10);
@@ -195,7 +217,8 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
         }
     }
 
-    regfree(&regex);
+    regfree(&rule_regex);
+    regfree(&time_regex);
 }
 
 
@@ -454,4 +477,20 @@ const char* __match_proto__() vmod_get_rules(struct sess *sp, struct vmod_priv *
     *s = 0;
 
     return rules;
+}
+
+int __match_proto__() vmod_get_duration(struct sess *sp, struct vmod_priv *priv, const char *key) {
+    AN(key);
+
+    struct rule *rule;
+    if (priv->priv == NULL) {
+        return 0;
+    }
+
+    rule = get_rule(priv->priv, key);
+    if (rule == NULL) {
+        return 0;
+    }
+
+    return rule->duration;
 }

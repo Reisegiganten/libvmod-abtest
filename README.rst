@@ -162,7 +162,7 @@ Description
         If the rule is not present in the current configuration, the function
         returns NULL.
 Example
-        ``set resp.http.Set-Cookie = "abtesting=" + abtest.get_rand("base");``
+        ``set resp.http.Set-Cookie = "abtesting=" + abtest.get_rand(req.url);``
 
 get_rules
 ---------

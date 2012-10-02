@@ -20,8 +20,6 @@ sub vcl_init {
     if (abtest.load_config("/tmp/abtest.cfg") != 0) {
         C{ syslog(LOG_ALERT, "Unable to load AB config from /tmp/abtest.cfg"); }C
     }
-    abtest.set_rule("special", "a:10;b:90;");
-    abtest.rem_rule("base");
 
     return (ok);
 }
@@ -62,6 +60,8 @@ sub vcl_recv {
             }
         }
     }
+
+    std.log("AB Cookie for '" + req.url + "': " + abtest.get_rand(req.url));
 
 /*
     if(req.http.Cookie ~ "abtesting") {

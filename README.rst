@@ -63,8 +63,8 @@ Description
 Example
         ::
 
-                abtest.set_rule("base_rule", "a:60;b:40");
                 abtest.set_rule("^/repec/cgi-bin/authorref.cgi\?handle=", "a:80;b:20;300;");
+                abtest.set_rule(".*", "a:60;b:40"); // default rule
 
 rem_rule
 --------
@@ -81,7 +81,7 @@ Description
         If the rule doesn't exist in the configuration, the function does
         nothing and returns without errors.
 Example
-        ``abtest.rem_rule("base_rule");``
+        ``abtest.rem_rule("^/repec/cgi-bin/authorref.cgi\?handle=");``
 
 clear
 -----

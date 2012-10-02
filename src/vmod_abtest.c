@@ -145,7 +145,7 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
     regex_t time_regex;
     regmatch_t match[3];
 
-    if (regcomp(&rule_regex, RULE_REGEX, REG_EXTENDED)){
+    if (r = regcomp(&rule_regex, RULE_REGEX, REG_EXTENDED)){
         size_t err_len = regerror(r, &rule_regex, NULL, 0);
         char* err_buf = alloca(err_len);
         regerror(r, &rule_regex, err_buf, err_len);
@@ -154,7 +154,7 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
         return;
     }
 
-    if (regcomp(&time_regex, TIME_REGEX, REG_EXTENDED)){
+    if (r = regcomp(&time_regex, TIME_REGEX, REG_EXTENDED)){
         regfree(&rule_regex);
         size_t err_len = regerror(r, &time_regex, NULL, 0);
         char* err_buf = alloca(err_len);

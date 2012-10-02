@@ -172,7 +172,7 @@ static struct rule* alloc_rule(struct sess *sp, struct vmod_abtest *cfg, const c
 
     alloc_key_regex(sp, cfg, rule, key);
 
-    VTAILQ_INSERT_HEAD(&cfg->rules, rule, list);
+    VTAILQ_INSERT_TAIL(&cfg->rules, rule, list);
 
     return rule;
 }
@@ -370,7 +370,7 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
         rule = (struct rule*)calloc(sizeof(struct rule), 1);
         AN(rule);
 
-        VTAILQ_INSERT_HEAD(&((struct vmod_abtest*) priv->priv)->rules, rule, list);
+        VTAILQ_INSERT_TAIL(&((struct vmod_abtest*) priv->priv)->rules, rule, list);
 
         DUP_MATCH(rule->key, s, match[1]);
         alloc_key_regex(sp, (struct vmod_abtest*) priv->priv, rule, rule->key);

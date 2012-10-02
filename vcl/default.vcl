@@ -54,14 +54,11 @@ sub vcl_recv {
             if (req.request == "GET") {
                 std.log("AB Config GET request: " + req.http.X-AB-Cfg);
                 std.log("CFG -> " + abtest.get_rules());
-                if (req.http.X-AB-Cfg != "") {
-                    std.log("duration for '" + req.http.X-AB-Cfg + "': " + abtest.get_duration(req.http.X-AB-Cfg));
-                }
             }
         }
     }
 
-    std.log("AB Cookie for '" + req.url + "': " + abtest.get_rand(req.url));
+    std.log("AB Cookie for '" + req.url + "': " + abtest.get_rand(req.url) + ", cookie should last for " + abtest.get_duration(req.url));
 
 /*
     if(req.http.Cookie ~ "abtesting") {

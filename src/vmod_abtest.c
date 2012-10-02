@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <regex.h>
 #include <math.h>
+#include <stdbool.h>
 
 #include "vrt.h"
 #include "bin/varnishd/cache.h"
@@ -48,6 +49,8 @@ struct rule {
     double* norm_weights;
     char** options;
 
+    regex_t* key_regex;
+
     VTAILQ_ENTRY(rule) list;
 };
 
@@ -55,6 +58,9 @@ struct vmod_abtest {
     unsigned magic;
     unsigned xid;
     VTAILQ_HEAD(, rule) rules;
+
+    bool use_text_key;
+    struct rule* (*get_rule)(struct vmod_abtest *cfg, const char *key);
 };
 
 static pthread_mutex_t cfg_mtx = PTHREAD_MUTEX_INITIALIZER;
@@ -63,6 +69,7 @@ static void cfg_init(struct vmod_abtest *cfg) {
     AN(cfg);
     cfg->magic = VMOD_ABTEST_MAGIC;
     VTAILQ_INIT(&cfg->rules);
+    cfg->get_rule = &get_regex_rule;
 }
 
 static void cfg_clear(struct vmod_abtest *cfg) {
@@ -89,10 +96,32 @@ static void delete_rule(struct rule* r) {
         FREE_FIELD(r->weights);
         FREE_FIELD(r->norm_weights);
         FREE_FIELD(r->options);
+
+        if (r->key_regex != NULL) {
+            regfree(r->key_regex);
+            free(r->key_regex);
+            r->key_regex = NULL;
+        }
+
         free(r);
 }
 
-static struct rule* get_rule(struct vmod_abtest *cfg, const char *key) {
+static struct rule* get_regex_rule(struct vmod_abtest *cfg, const char *key) {
+    struct rule *r;
+
+    if (!key) {
+        return NULL;
+    }
+
+    VTAILQ_FOREACH(r, &cfg->rules, list) {
+        if (regexec(r->key_regex, key, 0, NULL, 0) == 0) {
+            return r;
+        }
+    }
+    return NULL;
+}
+
+static struct rule* get_text_rule(struct vmod_abtest *cfg, const char *key) {
     struct rule *r;
 
     if (!key) {
@@ -107,7 +136,7 @@ static struct rule* get_rule(struct vmod_abtest *cfg, const char *key) {
     return NULL;
 }
 
-static struct rule* alloc_rule(struct vmod_abtest *cfg, const char *key) {
+static struct rule* alloc_rule(struct sess *sp, struct vmod_abtest *cfg, const char *key) {
     unsigned l;
     char *p;
     struct rule *rule;
@@ -120,18 +149,23 @@ static struct rule* alloc_rule(struct vmod_abtest *cfg, const char *key) {
     AN(rule->key);
     memcpy(rule->key, key, l);
 
-    VTAILQ_INSERT_HEAD(&cfg->rules, rule, list);
+    if (!cfg->use_text_key) {
+        rule->key_regex = calloc(1, sizeof(regex_t));
+        fprintf(stderr, "Compiling regex for %s\n", key);
 
-    return rule;
-}
+        int r;
+        if (r = regcomp(rule->key_regex, key, REG_EXTENDED | REG_NOSUB)) {
+            size_t err_len = regerror(r, rule->key_regex, NULL, 0);
+            char* err_buf = alloca(err_len);
+            regerror(r, rule->key_regex, err_buf, err_len);
+            LOG_ERR(sp, "Could not compile key regex: %s", err_buf);
 
-static struct rule* get_rule_alloc(struct vmod_abtest *cfg, const char *key) {
-    struct rule *rule;
-
-    rule = get_rule(cfg, key);
-    if (!rule) {
-        rule = alloc_rule(cfg, key);
+            free(rule->key_regex);
+            rule->key_regex = NULL;
+        }
     }
+
+    VTAILQ_INSERT_HEAD(&cfg->rules, rule, list);
 
     return rule;
 }
@@ -237,7 +271,11 @@ void __match_proto__() vmod_set_rule(struct sess *sp, struct vmod_priv *priv, co
         ALLOC_CFG(priv->priv);
     }
 
-    struct rule *target = get_rule_alloc(priv->priv, key);
+    struct rule *target = get_text_rule(priv->priv, key);
+    if (!target) {
+        target = alloc_rule(sp, priv->priv, key);
+    }
+
     parse_rule(sp, target, rule);
 }
 
@@ -248,7 +286,7 @@ void __match_proto__() vmod_rem_rule(struct sess *sp, struct vmod_priv *priv, co
         return;
     }
 
-    struct rule *rule = get_rule(priv->priv, key);
+    struct rule *rule = get_text_rule(priv->priv, key);
     if (rule != NULL) {
         VTAILQ_REMOVE(&((struct vmod_abtest*)priv->priv)->rules, rule, list);
         delete_rule(rule);
@@ -410,7 +448,7 @@ const char* __match_proto__() vmod_get_rand(struct sess *sp, struct vmod_priv *p
         return NULL;
     }
 
-    rule = get_rule(priv->priv, key);
+    rule = ((struct vmod_abtest*)priv->priv)->get_rule(priv->priv, key);
     if (rule == NULL) {
         return NULL;
     }
@@ -497,7 +535,7 @@ int __match_proto__() vmod_get_duration(struct sess *sp, struct vmod_priv *priv,
         return 0;
     }
 
-    rule = get_rule(priv->priv, key);
+    rule = ((struct vmod_abtest*)priv->priv)->get_rule(priv->priv, key);
     if (rule == NULL) {
         return 0;
     }

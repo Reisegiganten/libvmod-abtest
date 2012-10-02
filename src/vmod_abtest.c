@@ -136,6 +136,27 @@ static struct rule* get_text_rule(struct vmod_abtest *cfg, const char *key) {
     return NULL;
 }
 
+
+static void alloc_key_regex(struct sess *sp, struct vmod_abtest *cfg, struct rule* rule, const char *key) {
+    if (cfg->use_text_key) {
+        rule->key_regex = NULL;
+        return;
+    }
+
+    rule->key_regex = calloc(1, sizeof(regex_t));
+
+    int r;
+    if (r = regcomp(rule->key_regex, key, REG_EXTENDED | REG_NOSUB)) {
+        size_t err_len = regerror(r, rule->key_regex, NULL, 0);
+        char* err_buf = alloca(err_len);
+        regerror(r, rule->key_regex, err_buf, err_len);
+        LOG_ERR(sp, "Could not compile key regex: %s", err_buf);
+
+        free(rule->key_regex);
+        rule->key_regex = NULL;
+    }
+}
+
 static struct rule* alloc_rule(struct sess *sp, struct vmod_abtest *cfg, const char *key) {
     unsigned l;
     char *p;
@@ -149,21 +170,7 @@ static struct rule* alloc_rule(struct sess *sp, struct vmod_abtest *cfg, const c
     AN(rule->key);
     memcpy(rule->key, key, l);
 
-    if (!cfg->use_text_key) {
-        rule->key_regex = calloc(1, sizeof(regex_t));
-        fprintf(stderr, "Compiling regex for %s\n", key);
-
-        int r;
-        if (r = regcomp(rule->key_regex, key, REG_EXTENDED | REG_NOSUB)) {
-            size_t err_len = regerror(r, rule->key_regex, NULL, 0);
-            char* err_buf = alloca(err_len);
-            regerror(r, rule->key_regex, err_buf, err_len);
-            LOG_ERR(sp, "Could not compile key regex: %s", err_buf);
-
-            free(rule->key_regex);
-            rule->key_regex = NULL;
-        }
-    }
+    alloc_key_regex(sp, cfg, rule, key);
 
     VTAILQ_INSERT_HEAD(&cfg->rules, rule, list);
 
@@ -366,6 +373,7 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
         VTAILQ_INSERT_HEAD(&((struct vmod_abtest*) priv->priv)->rules, rule, list);
 
         DUP_MATCH(rule->key, s, match[1]);
+        alloc_key_regex(sp, (struct vmod_abtest*) priv->priv, rule, rule->key);
         parse_rule(sp, rule, s + match[2].rm_so);
 
         s += match[0].rm_eo + 1;

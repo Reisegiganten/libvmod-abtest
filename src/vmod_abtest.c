@@ -325,13 +325,6 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
 
     ALLOC_CFG(cfg);
 
-    if (priv->priv == NULL) {
-        ALLOC_CFG(priv->priv);
-    } else {
-        cfg_clear(priv->priv);
-    }
-
-
     if (r = regcomp(&regex, CONF_REGEX, REG_EXTENDED)){
         AZ(pthread_mutex_unlock(&cfg_mtx));
         cfg_free(cfg);
@@ -370,10 +363,10 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
         rule = (struct rule*)calloc(sizeof(struct rule), 1);
         AN(rule);
 
-        VTAILQ_INSERT_TAIL(&((struct vmod_abtest*) priv->priv)->rules, rule, list);
+        VTAILQ_INSERT_TAIL(&cfg->rules, rule, list);
 
         DUP_MATCH(rule->key, s, match[1]);
-        alloc_key_regex(sp, (struct vmod_abtest*) priv->priv, rule, rule->key);
+        alloc_key_regex(sp, cfg, rule, rule->key);
         parse_rule(sp, rule, s + match[2].rm_so);
 
         s += match[0].rm_eo + 1;

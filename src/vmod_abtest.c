@@ -20,7 +20,7 @@
 #define DUP_MATCH(to, from, match)                                              \
     (to) = (char*)calloc((match).rm_eo - (match).rm_so + 2, sizeof(char));      \
     AN((to));                                                                   \
-    strncpy((to), from + (match).rm_so, (match).rm_eo - (match).rm_so + 1);
+    strncpy((to), from + (match).rm_so, (match).rm_eo - (match).rm_so);
 
 #define FREE_FIELD(field)                                                       \
     if ((field) != NULL) {                                                      \

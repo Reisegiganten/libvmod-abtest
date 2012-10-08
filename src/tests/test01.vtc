@@ -1,22 +1,38 @@
-varnishtest "Test example vmod"
+varnishtest "Test abtest vmod"
 
+# Create and start a server thread called "s1"
 server s1 {
-       rxreq
-       txresp
+    # Receive a request
+    rxreq
+    # Send a standard response
+    txresp -hdr "Connection: close" -body "012345\n"
 } -start
 
+# Start a varnish instance called "v1"
 varnish v1 -vcl+backend {
-	import example from "${vmod_topbuild}/src/.libs/libvmod_example.so";
+    import abtest from "${vmod_topbuild}/src/.libs/libvmod_abtest.so";
 
-	sub vcl_deliver {
-		set resp.http.hello = example.hello("World");
-	}
+    sub vcl_init {
+        abtest.set_rule(".*", "a:1;b:1;");
+    }
+
+    sub vcl_deliver {
+        set resp.http.abtest = abtest.get_rules();
+    }
 } -start
 
+# Create a client thread called "c1"
 client c1 {
-	txreq -url "/"
-	rxresp
-	expect resp.http.hello == "Hello, World"
+    txreq -url "/"
+    rxresp
+    expect resp.http.abtest == ".*::a::1;b::1;"
 }
 
+# Run the client
 client c1 -run
+
+# Wait for the server to die
+server s1 -wait
+
+# (Forcefully) Stop the varnish instance.
+varnish v1 -stop

@@ -459,7 +459,7 @@ const char* __match_proto__() vmod_get_rand(struct sess *sp, struct vmod_priv *p
     h = rule->num - 1;
 
     while (l < h) {
-        p = (unsigned)ceil((h + l) / 2);
+        p = (unsigned)ceil((double)(h + l) / 2);
         if (rule->norm_weights[p] < n) {
             l = p + 1;
         } else if (rule->norm_weights[p] > n) {

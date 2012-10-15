@@ -187,14 +187,31 @@ get_duration
 
 Prototype
         ::
+
                 get_duration(<key>)
 Return value
-        INT
+        DURATION
 Description
         Return the configured cookie duration for the specified rule.
 
         If the duration is not set in the rule, or if the rule does not exist
         in the configuration, the function returns 0;
+
+
+get_expire
+------------
+
+Prototype
+        ::
+
+                get_expire(<key>)
+Return value
+        STRING
+Description
+        Return a time string computed from the current time plus the declared
+        duration to use in the `èxpire`` part of the cookie.
+Example
+        ``set resp.http.Set-Cookie = "abtesting=" + abtest.get_rand(req.url) + "; path=/; expires=" + abtest.get_expire(req.url)``;
 
 
 CONFIGURATION FILE

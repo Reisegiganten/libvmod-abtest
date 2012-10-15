@@ -44,7 +44,7 @@
 struct rule {
     char* key;
     unsigned num;
-    unsigned duration;
+    double duration;
     unsigned* weights;
     double* norm_weights;
     char** options;
@@ -207,9 +207,9 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
 
     s = source;
     if (r = regexec(&time_regex, s, 2, match, 0) == 0) {
-        rule->duration = strtoul(s + match[1].rm_so, NULL, 10);
+        rule->duration = strtod(s + match[1].rm_so, NULL);
     } else {
-        rule->duration = 0;
+        rule->duration = 0.;
     }
 
     rule->num = 0;
@@ -422,7 +422,7 @@ int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, 
             fprintf(f, "%s:%d;", r->options[i], r->weights[i]);
         }
         if (r->duration != 0) {
-            fprintf(f, "%d;", r->duration);
+            fprintf(f, "%f;", r->duration);
         }
         fprintf(f, "\n");
     }
@@ -494,7 +494,7 @@ const char* __match_proto__() vmod_get_rules(struct sess *sp, struct vmod_priv *
         for (i = 0; i < r->num; i++) {
             len += snprintf(NULL, 0, "%s:%d;", r->options[i], r->weights[i]);
             if (r->duration != 0) {
-                len += snprintf(NULL, 0, "%d;", r->duration);
+                len += snprintf(NULL, 0, "%f;", r->duration);
             }
         }
     }
@@ -515,7 +515,7 @@ const char* __match_proto__() vmod_get_rules(struct sess *sp, struct vmod_priv *
             len -= l;
 
             if (r->duration != 0) {
-                l = snprintf(s, len, "%d;", r->duration);
+                l = snprintf(s, len, "%f;", r->duration);
                 s += l;
                 len -= l;
             }

@@ -10,4 +10,5 @@ Function INT save_config(PRIV_VCL, STRING)
 
 Function STRING get_rand(PRIV_VCL, STRING)
 Function STRING get_rules(PRIV_VCL)
-Function INT get_duration(PRIV_VCL, STRING)
+
+Function DURATION get_duration(PRIV_VCL, STRING)

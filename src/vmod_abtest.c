@@ -417,8 +417,9 @@ int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, 
     }
 
     VTAILQ_FOREACH(r, &((struct vmod_abtest*) priv->priv)->rules, list) {
+        int i;
         fprintf(f, "%s:", r->key);
-        for (int i = 0; i < r->num; i++) {
+        for (i = 0; i < r->num; i++) {
             fprintf(f, "%s:%d;", r->options[i], r->weights[i]);
         }
         if (r->duration != 0) {

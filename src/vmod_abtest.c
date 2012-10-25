@@ -64,6 +64,7 @@ struct vmod_abtest {
 };
 
 static pthread_mutex_t cfg_mtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_rwlock_t cfg_rwl = PTHREAD_RWLOCK_INITIALIZER;
 
 static void cfg_init(struct vmod_abtest *cfg) {
     AN(cfg);
@@ -186,11 +187,7 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
     regex_t time_regex;
     regmatch_t match[3];
 
-    AZ(pthread_mutex_lock(&cfg_mtx));
-
     if (r = regcomp(&rule_regex, RULE_REGEX, REG_EXTENDED)){
-        AZ(pthread_mutex_unlock(&cfg_mtx));
-
         size_t err_len = regerror(r, &rule_regex, NULL, 0);
         char* err_buf = alloca(err_len);
         regerror(r, &rule_regex, err_buf, err_len);
@@ -201,8 +198,6 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
 
     if (r = regcomp(&time_regex, TIME_REGEX, REG_EXTENDED)){
         regfree(&rule_regex);
-        AZ(pthread_mutex_unlock(&cfg_mtx));
-
         size_t err_len = regerror(r, &time_regex, NULL, 0);
         char* err_buf = alloca(err_len);
         regerror(r, &time_regex, err_buf, err_len);
@@ -228,7 +223,6 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
     if (r != REG_NOMATCH) {
         regfree(&rule_regex);
         regfree(&time_regex);
-        AZ(pthread_mutex_unlock(&cfg_mtx));
 
         size_t err_len = regerror(r, &rule_regex, NULL, 0);
         char* err_buf = alloca(err_len);
@@ -266,8 +260,6 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
 
     regfree(&rule_regex);
     regfree(&time_regex);
-
-    AZ(pthread_mutex_unlock(&cfg_mtx));
 }
 
 
@@ -276,13 +268,17 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
 *******************************************************************************/
 
 int init_function(struct vmod_priv *priv, const struct VCL_conf *conf) {
+    AZ(pthread_rwlock_wrlock(&cfg_rwl));
     priv->free  = (vmod_priv_free_f *)cfg_free;
+    AZ(pthread_rwlock_unlock(&cfg_rwl));
     return (0);
 }
 
 void __match_proto__() vmod_set_rule(struct sess *sp, struct vmod_priv *priv, const char *key, const char *rule) {
     AN(key);
     AN(rule);
+
+    AZ(pthread_rwlock_wrlock(&cfg_rwl));
 
     if (priv->priv == NULL) {
         ALLOC_CFG(priv->priv);
@@ -294,6 +290,7 @@ void __match_proto__() vmod_set_rule(struct sess *sp, struct vmod_priv *priv, co
     }
 
     parse_rule(sp, target, rule);
+    AZ(pthread_rwlock_unlock(&cfg_rwl));
 }
 
 void __match_proto__() vmod_rem_rule(struct sess *sp, struct vmod_priv *priv, const char *key) {
@@ -303,11 +300,15 @@ void __match_proto__() vmod_rem_rule(struct sess *sp, struct vmod_priv *priv, co
         return;
     }
 
+    AZ(pthread_rwlock_wrlock(&cfg_rwl));
+
     struct rule *rule = get_text_rule(priv->priv, key);
     if (rule != NULL) {
         VTAILQ_REMOVE(&((struct vmod_abtest*)priv->priv)->rules, rule, list);
         delete_rule(rule);
     }
+
+    AZ(pthread_rwlock_unlock(&cfg_rwl));
 }
 
 void __match_proto__() vmod_clear(struct sess *sp, struct vmod_priv *priv) {
@@ -315,13 +316,16 @@ void __match_proto__() vmod_clear(struct sess *sp, struct vmod_priv *priv) {
         return;
     }
 
+    AZ(pthread_rwlock_wrlock(&cfg_rwl));
     cfg_clear(priv->priv);
+    AZ(pthread_rwlock_unlock(&cfg_rwl));
 }
 
 int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, const char *source) {
     AN(source);
 
     AZ(pthread_mutex_lock(&cfg_mtx));
+    AZ(pthread_rwlock_wrlock(&cfg_rwl));
 
     FILE *f;
     long file_len;
@@ -336,8 +340,9 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
     ALLOC_CFG(cfg);
 
     if (r = regcomp(&regex, CONF_REGEX, REG_EXTENDED)){
-        AZ(pthread_mutex_unlock(&cfg_mtx));
         cfg_free(cfg);
+        AZ(pthread_rwlock_unlock(&cfg_rwl));
+        AZ(pthread_mutex_unlock(&cfg_mtx));
 
         size_t err_len = regerror(r, &regex, NULL, 0);
         char* err_buf = alloca(err_len);
@@ -349,8 +354,9 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
 
     f = fopen(source, "r");
     if (f == NULL) {
-        AZ(pthread_mutex_unlock(&cfg_mtx));
         cfg_free(cfg);
+        AZ(pthread_rwlock_unlock(&cfg_rwl));
+        AZ(pthread_mutex_unlock(&cfg_mtx));
 
         LOG_ERR(sp, "Could not open abtest configuration file '%s' for reading.", source);
         return errno;
@@ -386,8 +392,9 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
     free (buf);
 
     if (r != REG_NOMATCH) {
-        AZ(pthread_mutex_unlock(&cfg_mtx));
         cfg_free(cfg);
+        AZ(pthread_rwlock_unlock(&cfg_rwl));
+        AZ(pthread_mutex_unlock(&cfg_mtx));
 
         size_t err_len = regerror(r, &regex, NULL, 0);
         char* err_buf = alloca(err_len);
@@ -397,12 +404,13 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
         return r;
     }
 
-    AZ(pthread_mutex_unlock(&cfg_mtx));
-
     if (priv->priv != NULL) {
         cfg_free(priv->priv);
     }
     priv->priv = cfg;
+
+    AZ(pthread_rwlock_unlock(&cfg_rwl));
+    AZ(pthread_mutex_unlock(&cfg_mtx));
 
     return 0;
 }
@@ -410,11 +418,12 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
 int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *target) {
     AN(target);
 
-    AZ(pthread_mutex_lock(&cfg_mtx));
-
     if (priv->priv == NULL) {
         return 0;
     }
+
+    AZ(pthread_mutex_lock(&cfg_mtx));
+    AZ(pthread_rwlock_rdlock(&cfg_rwl));
 
     struct rule *r;
     FILE *f;
@@ -422,6 +431,7 @@ int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, 
     f = fopen(target, "w");
     if (f == NULL) {
         LOG_ERR(sp, "Could not open abtest configuration file '%s' for writing.", target);
+        AZ(pthread_rwlock_unlock(&cfg_rwl));
         AZ(pthread_mutex_unlock(&cfg_mtx));
         return errno;
     }
@@ -439,6 +449,7 @@ int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, 
     }
 
     AZ(fclose(f));
+    AZ(pthread_rwlock_unlock(&cfg_rwl));
     AZ(pthread_mutex_unlock(&cfg_mtx));
 
     return 0;
@@ -460,8 +471,11 @@ const char* __match_proto__() vmod_get_rand(struct sess *sp, struct vmod_priv *p
         return NULL;
     }
 
+    AZ(pthread_rwlock_rdlock(&cfg_rwl));
+
     rule = ((struct vmod_abtest*)priv->priv)->get_rule(priv->priv, key);
     if (rule == NULL) {
+        AZ(pthread_rwlock_unlock(&cfg_rwl));
         return NULL;
     }
 
@@ -476,6 +490,7 @@ const char* __match_proto__() vmod_get_rand(struct sess *sp, struct vmod_priv *p
         } else if (rule->norm_weights[p] > n) {
             h = p - 1;
         } else {
+            AZ(pthread_rwlock_unlock(&cfg_rwl));
             return rule->options[p];
         }
     }
@@ -485,6 +500,7 @@ const char* __match_proto__() vmod_get_rand(struct sess *sp, struct vmod_priv *p
     } else {
         p = rule->norm_weights[l] >= n ? l : l+1;
     }
+    AZ(pthread_rwlock_unlock(&cfg_rwl));
     return rule->options[p];
 }
 
@@ -492,6 +508,8 @@ const char* __match_proto__() vmod_get_rules(struct sess *sp, struct vmod_priv *
     if (priv->priv == NULL) {
         return NULL;
     }
+
+    AZ(pthread_rwlock_rdlock(&cfg_rwl));
 
     struct rule *r;
     size_t len = 0;
@@ -535,6 +553,7 @@ const char* __match_proto__() vmod_get_rules(struct sess *sp, struct vmod_priv *
     }
     *s = 0;
 
+    AZ(pthread_rwlock_unlock(&cfg_rwl));
     return rules;
 }
 
@@ -546,15 +565,39 @@ double __match_proto__() vmod_get_duration(struct sess *sp, struct vmod_priv *pr
         return 0;
     }
 
+    AZ(pthread_rwlock_rdlock(&cfg_rwl));
+
     rule = ((struct vmod_abtest*)priv->priv)->get_rule(priv->priv, key);
     if (rule == NULL) {
-        return 0;
+        AZ(pthread_rwlock_unlock(&cfg_rwl));
+        return 0.;
     }
 
+    AZ(pthread_rwlock_unlock(&cfg_rwl));
     return rule->duration;
 }
 
 const char*  __match_proto__() vmod_get_expire(struct sess *sp, struct vmod_priv *priv, const char *key) {
-    double duration = vmod_get_duration(sp, priv, key);
-    return VRT_time_string(sp, TIM_real() + vmod_get_duration(sp, priv, key));
+    AN(key);
+
+    struct rule *rule;
+    if (priv->priv == NULL) {
+        return 0;
+    }
+
+    AZ(pthread_rwlock_rdlock(&cfg_rwl));
+
+    double duration = 0.;
+
+    rule = ((struct vmod_abtest*)priv->priv)->get_rule(priv->priv, key);
+    if (rule == NULL) {
+        AZ(pthread_rwlock_unlock(&cfg_rwl));
+        return NULL;
+    }
+
+    duration = rule->duration;
+    char* expire = VRT_time_string(sp, TIM_real() + duration);
+
+    AZ(pthread_rwlock_unlock(&cfg_rwl));
+    return expire;
 }

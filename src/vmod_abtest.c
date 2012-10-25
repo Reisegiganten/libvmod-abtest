@@ -547,6 +547,5 @@ double __match_proto__() vmod_get_duration(struct sess *sp, struct vmod_priv *pr
 
 const char*  __match_proto__() vmod_get_expire(struct sess *sp, struct vmod_priv *priv, const char *key) {
     double duration = vmod_get_duration(sp, priv, key);
-    fprintf(stderr, "duration for '%s': %f\n", key, duration);
     return VRT_time_string(sp, TIM_real() + vmod_get_duration(sp, priv, key));
 }

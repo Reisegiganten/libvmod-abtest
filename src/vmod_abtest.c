@@ -186,7 +186,11 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
     regex_t time_regex;
     regmatch_t match[3];
 
+    AZ(pthread_mutex_lock(&cfg_mtx));
+
     if (r = regcomp(&rule_regex, RULE_REGEX, REG_EXTENDED)){
+        AZ(pthread_mutex_unlock(&cfg_mtx));
+
         size_t err_len = regerror(r, &rule_regex, NULL, 0);
         char* err_buf = alloca(err_len);
         regerror(r, &rule_regex, err_buf, err_len);
@@ -197,6 +201,8 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
 
     if (r = regcomp(&time_regex, TIME_REGEX, REG_EXTENDED)){
         regfree(&rule_regex);
+        AZ(pthread_mutex_unlock(&cfg_mtx));
+
         size_t err_len = regerror(r, &time_regex, NULL, 0);
         char* err_buf = alloca(err_len);
         regerror(r, &time_regex, err_buf, err_len);
@@ -222,6 +228,8 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
     if (r != REG_NOMATCH) {
         regfree(&rule_regex);
         regfree(&time_regex);
+        AZ(pthread_mutex_unlock(&cfg_mtx));
+
         size_t err_len = regerror(r, &rule_regex, NULL, 0);
         char* err_buf = alloca(err_len);
         regerror(r, &rule_regex, err_buf, err_len);
@@ -237,6 +245,7 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
     s = source;
     n = 0;
     sum = 0;
+
     while ((r = regexec(&rule_regex, s, 3, match, 0)) == 0 && n < rule->num) {
         DUP_MATCH(rule->options[n], s, match[1]);
 
@@ -244,7 +253,6 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
 
         sum += rule->weights[n];
         rule->norm_weights[n] = sum;
-
 
         s += match[0].rm_eo;
         n++;
@@ -258,6 +266,8 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
 
     regfree(&rule_regex);
     regfree(&time_regex);
+
+    AZ(pthread_mutex_unlock(&cfg_mtx));
 }
 
 

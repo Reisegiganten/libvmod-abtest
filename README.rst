@@ -8,7 +8,7 @@ Varnish A/B Tests Module
 
 :Author: Xavier Basty
 :Date: 2012-09-24
-:Version: 0.1
+:Version: 1.0
 :Manual section: 3
 
 DESCRIPTION
@@ -34,6 +34,7 @@ SYNOPSIS
         abtest.get_rand(<key>)
         abtest.get_rules()
         abtest.get_duration(<key>)
+        abtest.get_expire(<key>)
 
 
 FUNCTIONS

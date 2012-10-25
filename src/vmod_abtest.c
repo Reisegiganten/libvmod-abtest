@@ -423,7 +423,7 @@ int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, 
             fprintf(f, "%s:%d;", r->options[i], r->weights[i]);
         }
         if (r->duration != 0) {
-            fprintf(f, "%f;", r->duration);
+            fprintf(f, "%g;", r->duration);
         }
         fprintf(f, "\n");
     }
@@ -494,9 +494,9 @@ const char* __match_proto__() vmod_get_rules(struct sess *sp, struct vmod_priv *
         len += strlen(r->key) + 2;
         for (i = 0; i < r->num; i++) {
             len += snprintf(NULL, 0, "%s:%d;", r->options[i], r->weights[i]);
-            if (r->duration != 0) {
-                len += snprintf(NULL, 0, "%f;", r->duration);
-            }
+        }
+        if (r->duration != 0) {
+            len += snprintf(NULL, 0, "%g;", r->duration);
         }
     }
 
@@ -514,12 +514,11 @@ const char* __match_proto__() vmod_get_rules(struct sess *sp, struct vmod_priv *
             l = snprintf(s, len, "%s:%d;", r->options[i], r->weights[i]);
             s += l;
             len -= l;
-
-            if (r->duration != 0) {
-                l = snprintf(s, len, "%f;", r->duration);
-                s += l;
-                len -= l;
-            }
+        }
+        if (r->duration != 0) {
+            l = snprintf(s, len, "%g;", r->duration);
+            s += l;
+            len -= l;
         }
         *s++ = ' ';
         len--;

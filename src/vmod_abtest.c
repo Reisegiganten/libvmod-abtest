@@ -443,7 +443,7 @@ int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, 
             fprintf(f, "%s:%d;", r->options[i], r->weights[i]);
         }
         if (r->duration != 0) {
-            fprintf(f, "%g;", r->duration);
+            fprintf(f, "%.0f;", r->duration);
         }
         fprintf(f, "\n");
     }
@@ -524,7 +524,7 @@ const char* __match_proto__() vmod_get_rules(struct sess *sp, struct vmod_priv *
             len += snprintf(NULL, 0, "%s:%d;", r->options[i], r->weights[i]);
         }
         if (r->duration != 0) {
-            len += snprintf(NULL, 0, "%g;", r->duration);
+            len += snprintf(NULL, 0, "%.0f;", r->duration);
         }
     }
 
@@ -544,7 +544,7 @@ const char* __match_proto__() vmod_get_rules(struct sess *sp, struct vmod_priv *
             len -= l;
         }
         if (r->duration != 0) {
-            l = snprintf(s, len, "%g;", r->duration);
+            l = snprintf(s, len, "%.0f;", r->duration);
             s += l;
             len -= l;
         }

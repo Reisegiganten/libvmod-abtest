@@ -1,15 +1,17 @@
-Module abtest
-Init init_function
+$ABI strict
+$Module abtest 3 "Varnish Module (vmod) to get weighted random values for A/B testing, with a dynamic configuration."
 
-Function VOID set_rule(PRIV_VCL, STRING, STRING)
-Function VOID rem_rule(PRIV_VCL, STRING)
-Function VOID clear(PRIV_VCL)
+$Event init_function
 
-Function INT load_config(PRIV_VCL, STRING)
-Function INT save_config(PRIV_VCL, STRING)
+$Function VOID set_rule(PRIV_VCL, STRING, STRING)
+$Function VOID rem_rule(PRIV_VCL, STRING)
+$Function VOID clear(PRIV_VCL)
 
-Function STRING get_rand(PRIV_VCL, STRING)
-Function STRING get_rules(PRIV_VCL)
+$Function INT load_config(PRIV_VCL, STRING)
+$Function INT save_config(PRIV_VCL, STRING)
 
-Function DURATION get_duration(PRIV_VCL, STRING)
-Function STRING get_expire(PRIV_VCL, STRING)
+$Function STRING get_rand(PRIV_VCL, STRING)
+$Function STRING get_rules(PRIV_VCL)
+
+$Function DURATION get_duration(PRIV_VCL, STRING)
+$Function STRING get_expire(PRIV_VCL, STRING)

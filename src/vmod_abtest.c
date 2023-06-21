@@ -4,10 +4,11 @@
 #include <stddef.h>
 #include <regex.h>
 #include <math.h>
+#include <string.h>
 #include <stdbool.h>
 
-#include "vrt.h"
-#include "bin/varnishd/cache.h"
+#include "bin/varnishd/cache/cache.h"
+#include "vtim.h"
 
 #include "vcc_if.h"
 
@@ -26,14 +27,6 @@
     if ((field) != NULL) {                                                      \
         free ((field));                                                         \
         (field) = NULL;                                                         \
-    }
-
-#define LOG_ERR(sess, ...)                                                      \
-    if ((sess) != NULL) {                                                       \
-        WSP((sess), SLT_VCL_error, __VA_ARGS__);                                \
-    } else {                                                                    \
-        fprintf(stderr, __VA_ARGS__);                                           \
-        fputs("\n", stderr);                                                    \
     }
 
 #define VMOD_ABTEST_MAGIC 0xDD2914D8
@@ -137,8 +130,7 @@ static struct rule* get_text_rule(struct vmod_abtest *cfg, const char *key) {
     return NULL;
 }
 
-
-static void alloc_key_regex(struct sess *sp, struct vmod_abtest *cfg, struct rule* rule, const char *key) {
+static void alloc_key_regex(VRT_CTX, struct vmod_abtest *cfg, struct rule* rule, const char *key) {
     if (cfg->use_text_key) {
         rule->key_regex = NULL;
         return;
@@ -151,14 +143,14 @@ static void alloc_key_regex(struct sess *sp, struct vmod_abtest *cfg, struct rul
         size_t err_len = regerror(r, rule->key_regex, NULL, 0);
         char* err_buf = alloca(err_len);
         regerror(r, rule->key_regex, err_buf, err_len);
-        LOG_ERR(sp, "Could not compile key regex: %s", err_buf);
+        write_log(ctx->vsl, SLT_VCL_Error, "ABTest: Could not compile key regex: %s", err_buf);
 
         free(rule->key_regex);
         rule->key_regex = NULL;
     }
 }
 
-static struct rule* alloc_rule(struct sess *sp, struct vmod_abtest *cfg, const char *key) {
+static struct rule* alloc_rule(VRT_CTX, struct vmod_abtest *cfg, const char *key) {
     unsigned l;
     char *p;
     struct rule *rule;
@@ -171,14 +163,14 @@ static struct rule* alloc_rule(struct sess *sp, struct vmod_abtest *cfg, const c
     AN(rule->key);
     memcpy(rule->key, key, l);
 
-    alloc_key_regex(sp, cfg, rule, key);
+    alloc_key_regex(ctx, cfg, rule, key);
 
     VTAILQ_INSERT_TAIL(&cfg->rules, rule, list);
 
     return rule;
 }
 
-static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
+static void parse_rule(VRT_CTX, struct rule *rule, const char *source) {
     unsigned n;
     unsigned sum;
     int r;
@@ -191,7 +183,7 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
         size_t err_len = regerror(r, &rule_regex, NULL, 0);
         char* err_buf = alloca(err_len);
         regerror(r, &rule_regex, err_buf, err_len);
-        LOG_ERR(sp, "Could not compile rule regex: %s", err_buf);
+        write_log(ctx->vsl, SLT_VCL_Error, "ABTest: Could not compile rule regex: %s", err_buf);
 
         return;
     }
@@ -201,7 +193,7 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
         size_t err_len = regerror(r, &time_regex, NULL, 0);
         char* err_buf = alloca(err_len);
         regerror(r, &time_regex, err_buf, err_len);
-        LOG_ERR(sp, "Could not compile time regex: %s", err_buf);
+        write_log(ctx->vsl, SLT_VCL_Error, "ABTest: Could not compile time regex: %s", err_buf);
 
         return;
     }
@@ -227,7 +219,7 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
         size_t err_len = regerror(r, &rule_regex, NULL, 0);
         char* err_buf = alloca(err_len);
         regerror(r, &rule_regex, err_buf, err_len);
-        LOG_ERR(sp, "Rule regex match failed: %s", err_buf);
+        write_log(ctx->vsl, SLT_VCL_Error, "ABTest: Rule regex match failed: %s", err_buf);
 
         return;
     }
@@ -262,19 +254,46 @@ static void parse_rule(struct sess *sp, struct rule *rule, const char *source) {
     regfree(&time_regex);
 }
 
+static void write_log(struct vsl_log *vsl, enum VSL_tag_e tag,  const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	if (vsl != NULL)
+		VSLbv(vsl, tag, fmt, ap);
+	else
+		VSLv(tag, 0, fmt, ap);
+	va_end(ap);
+}
 
 /*******************************************************************************
 ** VMOD Functions
 *******************************************************************************/
 
-int init_function(struct vmod_priv *priv, const struct VCL_conf *conf) {
-    AZ(pthread_rwlock_wrlock(&cfg_rwl));
-    priv->free  = (vmod_priv_free_f *)cfg_free;
-    AZ(pthread_rwlock_unlock(&cfg_rwl));
-    return (0);
+void ABtest_fini(VRT_CTX, void *cfg) {
+    cfg_free((struct vmod_abtest *)cfg);
 }
 
-void __match_proto__() vmod_set_rule(struct sess *sp, struct vmod_priv *priv, const char *key, const char *rule) {
+static const struct vmod_priv_methods abtest_methods[1] = {{
+    .magic = VMOD_PRIV_METHODS_MAGIC, 
+    .type = "priv_ABtest",
+    .fini = ABtest_fini
+}};
+
+
+int vmod_init_function(VRT_CTX, struct vmod_priv *priv, enum vcl_event_e e)
+{
+  switch (e) {
+  case VCL_EVENT_LOAD:
+    AZ(pthread_rwlock_wrlock(&cfg_rwl));
+    priv->methods = abtest_methods;
+    AZ(pthread_rwlock_unlock(&cfg_rwl));
+    break;
+  }
+  return 0;
+}
+
+VCL_VOID vmod_set_rule(VRT_CTX, struct vmod_priv *priv, VCL_STRING key, VCL_STRING rule) {
     AN(key);
     AN(rule);
 
@@ -286,14 +305,14 @@ void __match_proto__() vmod_set_rule(struct sess *sp, struct vmod_priv *priv, co
 
     struct rule *target = get_text_rule(priv->priv, key);
     if (!target) {
-        target = alloc_rule(sp, priv->priv, key);
+        target = alloc_rule(ctx, priv->priv, key);
     }
 
-    parse_rule(sp, target, rule);
+    parse_rule(ctx, target, rule);
     AZ(pthread_rwlock_unlock(&cfg_rwl));
 }
 
-void __match_proto__() vmod_rem_rule(struct sess *sp, struct vmod_priv *priv, const char *key) {
+VCL_VOID vmod_rem_rule(VRT_CTX, struct vmod_priv *priv, VCL_STRING key) {
     AN(key);
 
     if (priv->priv == NULL) {
@@ -311,7 +330,7 @@ void __match_proto__() vmod_rem_rule(struct sess *sp, struct vmod_priv *priv, co
     AZ(pthread_rwlock_unlock(&cfg_rwl));
 }
 
-void __match_proto__() vmod_clear(struct sess *sp, struct vmod_priv *priv) {
+VCL_VOID vmod_clear(VRT_CTX, struct vmod_priv *priv) {
     if (priv->priv == NULL) {
         return;
     }
@@ -321,7 +340,7 @@ void __match_proto__() vmod_clear(struct sess *sp, struct vmod_priv *priv) {
     AZ(pthread_rwlock_unlock(&cfg_rwl));
 }
 
-int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, const char *source) {
+VCL_INT vmod_load_config(VRT_CTX, struct vmod_priv *priv, VCL_STRING source) {
     AN(source);
 
     AZ(pthread_mutex_lock(&cfg_mtx));
@@ -332,6 +351,7 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
     char *buf;
     char *s;
     int r;
+    int rr;
     regex_t regex;
     regmatch_t match[3];
     struct rule *rule;
@@ -347,7 +367,7 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
         size_t err_len = regerror(r, &regex, NULL, 0);
         char* err_buf = alloca(err_len);
         regerror(r, &regex, err_buf, err_len);
-        LOG_ERR(sp, "Could not compile line regex: %s", err_buf);
+        write_log(ctx->vsl, SLT_VCL_Error, "ABTest: Could not compile line regex: %s", err_buf);
 
         return r;
     }
@@ -358,7 +378,7 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
         AZ(pthread_rwlock_unlock(&cfg_rwl));
         AZ(pthread_mutex_unlock(&cfg_mtx));
 
-        LOG_ERR(sp, "Could not open abtest configuration file '%s' for reading.", source);
+        write_log(ctx->vsl, SLT_VCL_Error, "ABTest: Could not open configuration file '%s' for reading.", source);
         return errno;
     }
 
@@ -382,8 +402,8 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
         VTAILQ_INSERT_TAIL(&cfg->rules, rule, list);
 
         DUP_MATCH(rule->key, s, match[1]);
-        alloc_key_regex(sp, cfg, rule, rule->key);
-        parse_rule(sp, rule, s + match[2].rm_so);
+        alloc_key_regex(ctx, cfg, rule, rule->key);
+        parse_rule(ctx, rule, s + match[2].rm_so);
 
         s += match[0].rm_eo + 1;
     }
@@ -399,7 +419,7 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
         size_t err_len = regerror(r, &regex, NULL, 0);
         char* err_buf = alloca(err_len);
         regerror(r, &regex, err_buf, err_len);
-        LOG_ERR(sp, "Regex match failed: %s", err_buf);
+        write_log(ctx->vsl, SLT_VCL_Error, "ABTest: Regex match failed: %s", err_buf);
 
         return r;
     }
@@ -415,7 +435,7 @@ int __match_proto__() vmod_load_config(struct sess *sp, struct vmod_priv *priv, 
     return 0;
 }
 
-int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, const char *target) {
+VCL_INT vmod_save_config(VRT_CTX, struct vmod_priv *priv, VCL_STRING target) {
     AN(target);
 
     if (priv->priv == NULL) {
@@ -430,7 +450,7 @@ int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, 
 
     f = fopen(target, "w");
     if (f == NULL) {
-        LOG_ERR(sp, "Could not open abtest configuration file '%s' for writing.", target);
+        write_log(ctx->vsl, SLT_VCL_Error, "ABTest: Could not open configuration file '%s' for writing.", target);
         AZ(pthread_rwlock_unlock(&cfg_rwl));
         AZ(pthread_mutex_unlock(&cfg_mtx));
         return errno;
@@ -455,11 +475,64 @@ int __match_proto__() vmod_save_config(struct sess *sp, struct vmod_priv *priv, 
     return 0;
 }
 
+VCL_STRING vmod_get_rules(VRT_CTX, struct vmod_priv *priv) {
+    if (priv->priv == NULL) {
+        return NULL;
+    }
+
+    AZ(pthread_rwlock_rdlock(&cfg_rwl));
+
+    struct rule *r;
+    size_t len = 0;
+    size_t l;
+    int i;
+    char *rules;
+    char *s;
+
+    VTAILQ_FOREACH(r, &((struct vmod_abtest*)priv->priv)->rules, list) {
+        len += strlen(r->key) + 2;
+        for (i = 0; i < r->num; i++) {
+            len += snprintf(NULL, 0, "%s:%d;", r->options[i], r->weights[i]);
+        }
+        if (r->duration != 0) {
+            len += snprintf(NULL, 0, "%.0f;", r->duration);
+        }
+    }
+
+    AN(rules = (char*)WS_Alloc(ctx->ws, len + 1));
+
+    s = rules;
+    VTAILQ_FOREACH(r, &((struct vmod_abtest*)priv->priv)->rules, list) {
+        l = strlen(r->key);
+        memcpy(s, r->key, l);
+        s += l;
+        *s++ = ':';
+        len -= l + 1;
+
+        for (i = 0; i < r->num; i++) {
+            l = snprintf(s, len, "%s:%d;", r->options[i], r->weights[i]);
+            s += l;
+            len -= l;
+        }
+        if (r->duration != 0) {
+            l = snprintf(s, len, "%.0f;", r->duration);
+            s += l;
+            len -= l;
+        }
+        *s++ = ' ';
+        len--;
+    }
+    *s = 0;
+
+    AZ(pthread_rwlock_unlock(&cfg_rwl));
+    return rules;
+}
+
 /*
 * Weighted random algorithm from:
 * http://erlycoder.com/105/javascript-weighted-random-value-from-array
 */
-const char* __match_proto__() vmod_get_rand(struct sess *sp, struct vmod_priv *priv, const char *key) {
+VCL_STRING vmod_get_rand(VRT_CTX, struct vmod_priv *priv, VCL_STRING key) {
     AN(key);
 
     struct rule *rule;
@@ -504,60 +577,7 @@ const char* __match_proto__() vmod_get_rand(struct sess *sp, struct vmod_priv *p
     return rule->options[p];
 }
 
-const char* __match_proto__() vmod_get_rules(struct sess *sp, struct vmod_priv *priv) {
-    if (priv->priv == NULL) {
-        return NULL;
-    }
-
-    AZ(pthread_rwlock_rdlock(&cfg_rwl));
-
-    struct rule *r;
-    size_t len = 0;
-    size_t l;
-    int i;
-    char *rules;
-    char *s;
-
-    VTAILQ_FOREACH(r, &((struct vmod_abtest*)priv->priv)->rules, list) {
-        len += strlen(r->key) + 2;
-        for (i = 0; i < r->num; i++) {
-            len += snprintf(NULL, 0, "%s:%d;", r->options[i], r->weights[i]);
-        }
-        if (r->duration != 0) {
-            len += snprintf(NULL, 0, "%.0f;", r->duration);
-        }
-    }
-
-    AN(rules = (char*)WS_Alloc(sp->ws, len + 1));
-
-    s = rules;
-    VTAILQ_FOREACH(r, &((struct vmod_abtest*)priv->priv)->rules, list) {
-        l = strlen(r->key);
-        memcpy(s, r->key, l);
-        s += l;
-        *s++ = ':';
-        len -= l + 1;
-
-        for (i = 0; i < r->num; i++) {
-            l = snprintf(s, len, "%s:%d;", r->options[i], r->weights[i]);
-            s += l;
-            len -= l;
-        }
-        if (r->duration != 0) {
-            l = snprintf(s, len, "%.0f;", r->duration);
-            s += l;
-            len -= l;
-        }
-        *s++ = ' ';
-        len--;
-    }
-    *s = 0;
-
-    AZ(pthread_rwlock_unlock(&cfg_rwl));
-    return rules;
-}
-
-double __match_proto__() vmod_get_duration(struct sess *sp, struct vmod_priv *priv, const char *key) {
+VCL_DURATION vmod_get_duration(VRT_CTX, struct vmod_priv *priv, VCL_STRING key) {
     AN(key);
 
     struct rule *rule;
@@ -577,27 +597,25 @@ double __match_proto__() vmod_get_duration(struct sess *sp, struct vmod_priv *pr
     return rule->duration;
 }
 
-const char*  __match_proto__() vmod_get_expire(struct sess *sp, struct vmod_priv *priv, const char *key) {
+VCL_STRING vmod_get_expire(VRT_CTX, struct vmod_priv *priv, VCL_STRING key) {
     AN(key);
 
     struct rule *rule;
     if (priv->priv == NULL) {
-        return 0;
+        return NULL;
     }
 
     AZ(pthread_rwlock_rdlock(&cfg_rwl));
-
     double duration = 0.;
 
+    int found;
     rule = ((struct vmod_abtest*)priv->priv)->get_rule(priv->priv, key);
     if (rule == NULL) {
         AZ(pthread_rwlock_unlock(&cfg_rwl));
         return NULL;
     }
-
     duration = rule->duration;
-    char* expire = VRT_time_string(sp, TIM_real() + duration);
-
+    const char* expire = VRT_TIME_string(ctx, VTIM_real() + duration);
     AZ(pthread_rwlock_unlock(&cfg_rwl));
     return expire;
 }
